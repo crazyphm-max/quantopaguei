@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1b5e20">
+<title>QuantoPaguei — histórico de preços do supermercado</title>
+<!-- Biblioteca de leitura de QR Code pela câmera (única dependência externa).
+     Se estiver offline e a lib não carregar, o app continua funcionando:
+     apenas a leitura por câmera fica indisponível (há entrada manual da chave). -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+/* ============================================================
+   QuantoPaguei — estilos (mobile-first, uso com uma mão)
+   ============================================================ */
+:root{
+  --verde:#1b5e20;
+  --verde-claro:#e8f5e9;
+  --verde-medio:#43a047;
+  --vermelho:#c62828;
+  --vermelho-claro:#ffebee;
+  --cinza:#f5f5f5;
+  --cinza-borda:#e0e0e0;
+  --texto:#212121;
+  --texto-suave:#757575;
+  --fundo:#fafafa;
+  --radius:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{font-size:16px}
+body{
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--fundo);color:var(--texto);
+  padding-bottom:76px; /* espaço para a barra de abas fixa */
+}
+header.topo{
+  background:var(--verde);color:#fff;
+  padding:14px 16px;position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:8px;
+}
+header.topo h1{font-size:1.15rem;font-weight:700;letter-spacing:.3px}
+header.topo .logo{font-size:1.3rem}
+main{max-width:640px;margin:0 auto;padding:12px}
+section.tela{display:none}
+section.tela.ativa{display:block;animation:aparecer .15s ease-out}
+@keyframes aparecer{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* --- barra de abas inferior --- */
+nav.abas{
+  position:fixed;bottom:0;left:0;right:0;z-index:60;
+  background:#fff;border-top:1px solid var(--cinza-borda);
+  display:flex;justify-content:space-around;
+  padding:4px 0 max(6px, env(safe-area-inset-bottom));
+}
+nav.abas button{
+  flex:1;background:none;border:none;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  font-size:.68rem;color:var(--texto-suave);padding:6px 2px;
+}
+nav.abas button .ico{font-size:1.35rem;line-height:1}
+nav.abas button.ativa{color:var(--verde);font-weight:700}
+
+/* --- componentes genéricos --- */
+.cartao{
+  background:#fff;border:1px solid var(--cinza-borda);border-radius:var(--radius);
+  padding:14px;margin-bottom:12px;
+}
+h2{font-size:1.05rem;margin-bottom:10px;color:var(--verde)}
+h3{font-size:.95rem;margin-bottom:8px}
+label{display:block;font-size:.8rem;color:var(--texto-suave);margin-bottom:4px}
+input[type=text],input[type=search],input[type=number],input[type=date],select,textarea{
+  width:100%;padding:12px;font-size:1rem;
+  border:1px solid var(--cinza-borda);border-radius:10px;background:#fff;
+}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--verde-medio);border-color:var(--verde-medio)}
+textarea{min-height:140px;font-family:inherit}
+.botao{
+  display:block;width:100%;padding:14px;margin-top:10px;
+  font-size:1rem;font-weight:700;border:none;border-radius:10px;cursor:pointer;
+  background:var(--verde);color:#fff;text-align:center;text-decoration:none;
+}
+.botao:active{opacity:.85}
+.botao.secundario{background:#fff;color:var(--verde);border:2px solid var(--verde)}
+.botao.perigo{background:var(--vermelho)}
+.botao.mini{display:inline-block;width:auto;padding:8px 14px;font-size:.85rem;margin:0}
+.linha-flex{display:flex;gap:8px}
+.linha-flex>*{flex:1}
+.aviso{
+  padding:10px 12px;border-radius:10px;font-size:.9rem;margin:10px 0;
+  background:#fff8e1;border:1px solid #ffe082;
+}
+.aviso.erro{background:var(--vermelho-claro);border-color:#ef9a9a}
+.aviso.ok{background:var(--verde-claro);border-color:#a5d6a7}
+.suave{color:var(--texto-suave);font-size:.85rem}
+.centro{text-align:center}
+.escondido{display:none !important}
+
+/* --- consulta rápida (tela principal) --- */
+.busca-grande input{padding:16px;font-size:1.1rem;border-radius:14px;border:2px solid var(--verde-medio)}
+.stats{display:flex;gap:8px;margin:12px 0}
+.stat{
+  flex:1;background:#fff;border:1px solid var(--cinza-borda);border-radius:var(--radius);
+  padding:10px 6px;text-align:center;
+}
+.stat .rotulo{font-size:.68rem;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.4px}
+.stat .valor{font-size:1.05rem;font-weight:800;margin-top:2px}
+.stat .detalhe{font-size:.68rem;color:var(--texto-suave);margin-top:2px}
+.stat.menor{background:var(--verde-claro);border-color:#a5d6a7}
+.stat.menor .valor{color:var(--verde)}
+.veredito{
+  border-radius:var(--radius);padding:14px;text-align:center;
+  font-size:1.05rem;font-weight:800;margin:10px 0;
+}
+.veredito.bom{background:var(--verde-claro);color:var(--verde);border:2px solid var(--verde-medio)}
+.veredito.ruim{background:var(--vermelho-claro);color:var(--vermelho);border:2px solid #ef9a9a}
+.sugestoes button{
+  display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--cinza-borda);
+  border-radius:10px;padding:12px;margin-bottom:6px;font-size:.95rem;cursor:pointer;
+}
+.hist-item{
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:10px 0;border-bottom:1px solid var(--cinza);font-size:.9rem;
+}
+.hist-item:last-child{border-bottom:none}
+.hist-item .preco{font-weight:800;white-space:nowrap}
+.hist-item .preco.menor-hist{color:var(--verde)}
+
+/* --- leitor de QR --- */
+#leitor-qr{width:100%;border-radius:var(--radius);overflow:hidden;margin-top:8px}
+.passo{counter-increment:passos;position:relative;padding-left:34px;margin-bottom:14px}
+.passo::before{
+  content:counter(passos);position:absolute;left:0;top:0;
+  width:24px;height:24px;border-radius:50%;background:var(--verde);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;
+}
+.lista-passos{counter-reset:passos;margin-top:10px}
+
+/* --- conferência de itens --- */
+.item-conf{
+  border:1px solid var(--cinza-borda);border-radius:10px;padding:10px;margin-bottom:10px;background:#fff;
+}
+.item-conf .grade{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
+.item-conf input{padding:8px;font-size:.9rem}
+.item-conf .remover{
+  float:right;background:none;border:none;color:var(--vermelho);font-size:1.1rem;cursor:pointer;padding:2px 6px;
+}
+
+/* --- lista de compras / produtos --- */
+.compra-cab{
+  display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;
+}
+.compra-cab .total{font-weight:800;color:var(--verde);white-space:nowrap}
+.produto-linha{
+  display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--cinza);
+}
+.produto-linha:last-child{border-bottom:none}
+.produto-linha .info{flex:1;min-width:0}
+.produto-linha .nome{font-weight:700;font-size:.92rem;word-break:break-word}
+.produto-linha .precos{font-size:.78rem;color:var(--texto-suave);margin-top:2px}
+.produto-linha input[type=checkbox]{width:20px;height:20px;flex:none}
+.tag{display:inline-block;background:var(--cinza);border-radius:6px;padding:1px 6px;font-size:.7rem;margin-left:4px}
+</style>
+</head>
+<body>
+
+<header class="topo"><span class="logo">🛒</span><h1>QuantoPaguei</h1></header>
+
+<main>
+
+<!-- ============================================================
+     TELA 1 — INÍCIO / CONSULTA RÁPIDA
+     É a tela usada dentro do mercado: busca um produto e mostra
+     menor preço, média e último preço, além do histórico completo.
+     ============================================================ -->
+<section id="tela-inicio" class="tela ativa">
+  <div class="cartao busca-grande">
+    <label for="busca-produto">Qual produto você está olhando?</label>
+    <input type="search" id="busca-produto" placeholder="ex.: arroz, peito de frango…" autocomplete="off">
+    <div style="margin-top:8px">
+      <label for="preco-gondola">Preço na gôndola (opcional, para comparar)</label>
+      <input type="text" id="preco-gondola" inputmode="decimal" placeholder="ex.: 15,90" autocomplete="off">
+    </div>
+  </div>
+  <div id="resultado-busca"></div>
+</section>
+
+<!-- ============================================================
+     TELA 2 — LER NOTA (QR + colar texto da SEFAZ + conferência)
+     ============================================================ -->
+<section id="tela-ler" class="tela">
+
+  <!-- Etapa A: capturar a chave de acesso -->
+  <div class="cartao" id="bloco-captura">
+    <h2>📷 Ler nota fiscal</h2>
+    <p class="suave">Aponte a câmera para o QR Code impresso na nota (NFC-e).</p>
+    <button class="botao" id="btn-iniciar-camera">Ligar câmera e ler QR Code</button>
+    <button class="botao secundario" id="btn-parar-camera" style="display:none">Parar câmera</button>
+    <div id="leitor-qr"></div>
+    <div style="margin-top:14px">
+      <label for="chave-manual">Ou cole aqui a URL do QR Code / chave de acesso (44 dígitos)</label>
+      <input type="text" id="chave-manual" placeholder="URL ou chave de acesso">
+      <button class="botao secundario" id="btn-usar-chave">Usar esta chave</button>
+    </div>
+    <button class="botao secundario" id="btn-ir-manual">✍️ Cadastrar item avulso (sem nota)</button>
+  </div>
+
+  <!-- Etapa B: abrir a SEFAZ e colar o texto -->
+  <div class="cartao escondido" id="bloco-colar">
+    <h2>📋 Copiar dados da nota</h2>
+    <div id="info-chave" class="aviso ok"></div>
+    <div class="lista-passos">
+      <div class="passo">Toque no botão abaixo para abrir a nota no site da SEFAZ‑MG (abre em nova aba).</div>
+      <div class="passo">Na página da nota, <b>selecione tudo</b> (toque e segure → Selecionar tudo) e <b>copie</b>.</div>
+      <div class="passo">Volte aqui e <b>cole</b> o texto no campo abaixo.</div>
+    </div>
+    <a class="botao" id="link-sefaz" href="#" target="_blank" rel="noopener">Abrir nota no site da SEFAZ</a>
+    <textarea id="texto-colado" placeholder="Cole aqui o texto copiado da página da SEFAZ…"></textarea>
+    <button class="botao" id="btn-extrair">Extrair itens do texto</button>
+    <button class="botao secundario" id="btn-voltar-captura">← Voltar</button>
+    <div id="erro-parse"></div>
+  </div>
+
+  <!-- Etapa C: conferência (editável) antes de salvar -->
+  <div class="cartao escondido" id="bloco-conferencia">
+    <h2>✅ Conferir antes de salvar</h2>
+    <div class="linha-flex">
+      <div><label>Estabelecimento</label><input type="text" id="conf-estab"></div>
+    </div>
+    <div class="linha-flex" style="margin-top:6px">
+      <div><label>CNPJ</label><input type="text" id="conf-cnpj"></div>
+      <div><label>Data da compra</label><input type="date" id="conf-data"></div>
+    </div>
+    <h3 style="margin-top:14px">Itens extraídos <span id="conf-qtd-itens" class="tag"></span></h3>
+    <div id="lista-conferencia"></div>
+    <button class="botao secundario" id="btn-add-item-conf">+ Adicionar item</button>
+    <button class="botao" id="btn-salvar-nota">💾 Salvar compra</button>
+    <button class="botao secundario" id="btn-cancelar-conf">Cancelar</button>
+  </div>
+
+  <!-- Fallback: cadastro manual de item avulso -->
+  <div class="cartao escondido" id="bloco-manual">
+    <h2>✍️ Item avulso</h2>
+    <p class="suave">Use quando não houver nota fiscal ou a leitura falhar.</p>
+    <label>Produto</label>
+    <input type="text" id="man-produto" placeholder="ex.: Arroz 5kg">
+    <div class="linha-flex" style="margin-top:6px">
+      <div><label>Preço unitário (R$)</label><input type="text" id="man-preco" inputmode="decimal" placeholder="15,90"></div>
+      <div><label>Quantidade</label><input type="text" id="man-qtd" inputmode="decimal" value="1"></div>
+      <div><label>Unidade</label>
+        <select id="man-unidade">
+          <option>UN</option><option>KG</option><option>G</option><option>L</option>
+          <option>ML</option><option>PCT</option><option>CX</option><option>DZ</option>
+        </select>
+      </div>
+    </div>
+    <div class="linha-flex" style="margin-top:6px">
+      <div><label>Mercado</label><input type="text" id="man-mercado" placeholder="ex.: Supermercado BH"></div>
+      <div><label>Data</label><input type="date" id="man-data"></div>
+    </div>
+    <button class="botao" id="btn-salvar-manual">💾 Salvar item</button>
+    <button class="botao secundario" id="btn-voltar-manual">← Voltar</button>
+    <div id="msg-manual"></div>
+  </div>
+</section>
+
+<!-- ============================================================
+     TELA 3 — COMPRAS (notas importadas)
+     ============================================================ -->
+<section id="tela-compras" class="tela">
+  <div class="cartao">
+    <h2>🧾 Compras registradas</h2>
+    <div id="lista-compras"></div>
+  </div>
+</section>
+
+<!-- ============================================================
+     TELA 4 — PRODUTOS (lista + unificação de nomes)
+     ============================================================ -->
+<section id="tela-produtos" class="tela">
+  <div class="cartao">
+    <h2>📦 Produtos</h2>
+    <input type="search" id="filtro-produtos" placeholder="Filtrar produtos…">
+    <p class="suave" style="margin-top:8px">
+      Marque 2+ produtos que são a mesma coisa e toque em “Unificar” para juntar
+      o histórico deles sob um único nome. Toque no ✏️ para renomear.
+    </p>
+    <button class="botao mini" id="btn-unificar" style="margin-top:8px">🔗 Unificar selecionados</button>
+    <div id="lista-produtos" style="margin-top:10px"></div>
+  </div>
+</section>
+
+<!-- ============================================================
+     TELA 5 — CONFIGURAÇÕES / BACKUP
+     ============================================================ -->
+<section id="tela-config" class="tela">
+  <div class="cartao">
+    <h2>⚙️ Backup e dados</h2>
+    <p class="suave">Os dados ficam salvos <b>apenas neste navegador</b>. Exporte um backup de tempos em tempos para não perder o histórico.</p>
+    <div id="resumo-dados" class="aviso ok" style="margin-top:10px"></div>
+    <button class="botao" id="btn-exportar">⬇️ Exportar backup (JSON)</button>
+    <label class="botao secundario" style="cursor:pointer">
+      ⬆️ Importar backup (JSON)
+      <input type="file" id="input-importar" accept=".json,application/json" class="escondido">
+    </label>
+    <div id="msg-config"></div>
+  </div>
+  <div class="cartao">
+    <h2>🗑️ Zona de perigo</h2>
+    <button class="botao perigo" id="btn-apagar-tudo">Apagar TODOS os dados</button>
+  </div>
+  <p class="suave centro" style="margin-top:14px">QuantoPaguei — histórico de preços via NFC‑e (MG)</p>
+</section>
+
+</main>
+
+<!-- barra de navegação inferior -->
+<nav class="abas">
+  <button data-tela="tela-inicio" class="ativa"><span class="ico">🔍</span>Consulta</button>
+  <button data-tela="tela-ler"><span class="ico">📷</span>Ler nota</button>
+  <button data-tela="tela-compras"><span class="ico">🧾</span>Compras</button>
+  <button data-tela="tela-produtos"><span class="ico">📦</span>Produtos</button>
+  <button data-tela="tela-config"><span class="ico">⚙️</span>Backup</button>
+</nav>
+
+<script>
+"use strict";
+/* ============================================================
+   QuantoPaguei — lógica do aplicativo
+   Tudo em um único arquivo, sem backend, dados no IndexedDB.
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   Utilidades de formatação e normalização
+   ------------------------------------------------------------ */
+
+// Converte número em formato brasileiro ("1.234,56" ou "15,90") para float.
+function parseNumeroBR(s){
+  if(s === null || s === undefined) return NaN;
+  s = String(s).trim().replace(/^R\$\s*/i, "").replace(/\s/g, "");
+  if(!s) return NaN;
+  if(s.includes(",")){
+    // vírgula é o separador decimal; pontos são de milhar
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  const n = parseFloat(s);
+  return isFinite(n) ? n : NaN;
+}
+
+// Formata float como moeda brasileira.
+function fmtMoeda(n){
+  if(!isFinite(n)) return "—";
+  return n.toLocaleString("pt-BR", {style:"currency", currency:"BRL"});
+}
+
+// Formata quantidade (até 3 casas, sem zeros à direita desnecessários).
+function fmtQtd(n){
+  if(!isFinite(n)) return "—";
+  return n.toLocaleString("pt-BR", {maximumFractionDigits:3});
+}
+
+// Data ISO (yyyy-mm-dd) -> dd/mm/aaaa para exibição.
+function fmtData(iso){
+  if(!iso) return "—";
+  const p = String(iso).slice(0,10).split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+}
+
+// Data de hoje em ISO local (yyyy-mm-dd).
+function hojeISO(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+// Normaliza nome de produto para busca/agrupamento:
+// maiúsculas, sem acentos, espaços colapsados.
+function normalizarNome(s){
+  return String(s || "")
+    .toUpperCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "") // remove acentos
+    .replace(/[^A-Z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Escapa texto para inserir com segurança em HTML.
+function esc(s){
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  }[c]));
+}
+
+/* ------------------------------------------------------------
+   Banco de dados — IndexedDB
+   Stores:
+     compras : { chave, estabelecimento, cnpj, data, total }
+     itens   : { id(auto), compraId(=chave), descricaoOriginal,
+                 nomeNormalizado, quantidade, unidade,
+                 valorUnitario, valorTotal, estabelecimento, data }
+   ------------------------------------------------------------ */
+const DB_NOME = "quantopaguei";
+const DB_VERSAO = 1;
+let db = null;
+
+function abrirBanco(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NOME, DB_VERSAO);
+    req.onupgradeneeded = (ev) => {
+      const d = ev.target.result;
+      if(!d.objectStoreNames.contains("compras")){
+        d.createObjectStore("compras", {keyPath:"chave"});
+      }
+      if(!d.objectStoreNames.contains("itens")){
+        const st = d.createObjectStore("itens", {keyPath:"id", autoIncrement:true});
+        st.createIndex("compraId", "compraId", {unique:false});
+        st.createIndex("nomeNormalizado", "nomeNormalizado", {unique:false});
+      }
+    };
+    req.onsuccess = () => { db = req.result; resolve(db); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Promisifica uma requisição do IndexedDB.
+function reqP(req){
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function dbGetCompra(chave){
+  return reqP(db.transaction("compras").objectStore("compras").get(chave));
+}
+function dbTodasCompras(){
+  return reqP(db.transaction("compras").objectStore("compras").getAll());
+}
+function dbTodosItens(){
+  return reqP(db.transaction("itens").objectStore("itens").getAll());
+}
+function dbItensDaCompra(chave){
+  return reqP(db.transaction("itens").objectStore("itens").index("compraId").getAll(chave));
+}
+
+// Salva uma compra e seus itens numa única transação.
+function dbSalvarCompra(compra, itens){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(["compras","itens"], "readwrite");
+    tx.objectStore("compras").put(compra);
+    const stI = tx.objectStore("itens");
+    for(const it of itens){
+      const copia = {...it, compraId: compra.chave};
+      delete copia.id; // deixa o autoIncrement gerar
+      stI.add(copia);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Exclui uma compra e todos os seus itens.
+function dbExcluirCompra(chave){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(["compras","itens"], "readwrite");
+    tx.objectStore("compras").delete(chave);
+    const idx = tx.objectStore("itens").index("compraId");
+    idx.getAllKeys(chave).onsuccess = (ev) => {
+      for(const k of ev.target.result) tx.objectStore("itens").delete(k);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Atualiza o nomeNormalizado de todos os itens de um grupo (renomear/unificar).
+function dbRenomearGrupo(nomesAntigos, nomeNovo){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("itens", "readwrite");
+    const st = tx.objectStore("itens");
+    st.getAll().onsuccess = (ev) => {
+      for(const it of ev.target.result){
+        if(nomesAntigos.includes(it.nomeNormalizado)){
+          it.nomeNormalizado = nomeNovo;
+          st.put(it);
+        }
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// Apaga tudo (as duas stores).
+function dbApagarTudo(){
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(["compras","itens"], "readwrite");
+    tx.objectStore("compras").clear();
+    tx.objectStore("itens").clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/* ------------------------------------------------------------
+   Parser do texto colado da página da SEFAZ-MG
+   O formato varia (resumo, completa, versões do portal), então
+   usamos VÁRIAS estratégias e ficamos com a que extrair mais itens.
+   Tudo é conferível/editável antes de salvar.
+   ------------------------------------------------------------ */
+
+// Unidades comerciais reconhecidas.
+const UNIDADES = new Set([
+  "UN","UND","UNID","UNIDADE","PC","PCT","PT","CX","KG","G","GR","L","LT","LITRO",
+  "ML","DZ","SC","FD","BD","GL","KT","JG","PAR","RL","TP","M","CM","BF","BJ","BAND","POTE","LATA","FR","GF","EMB"
+]);
+
+function ehUnidade(tok){
+  return UNIDADES.has(String(tok || "").toUpperCase().replace(/[.]/g,""));
+}
+
+// Valida um item extraído; retorna o item “limpo” ou null.
+function validarItem(desc, qtd, un, vlUnit, vlTotal){
+  desc = String(desc || "").replace(/\s+/g," ").trim();
+  qtd = parseNumeroBR(qtd);
+  vlUnit = parseNumeroBR(vlUnit);
+  vlTotal = parseNumeroBR(vlTotal);
+  if(!desc || desc.length < 2) return null;
+  if(!isFinite(qtd) || qtd <= 0) return null;
+  // se faltar um dos valores, deriva do outro
+  if(!isFinite(vlUnit) && isFinite(vlTotal)) vlUnit = vlTotal / qtd;
+  if(!isFinite(vlTotal) && isFinite(vlUnit)) vlTotal = vlUnit * qtd;
+  if(!isFinite(vlUnit) || vlUnit <= 0) return null;
+  return {
+    descricao: desc,
+    quantidade: qtd,
+    unidade: String(un || "UN").toUpperCase().replace(/[.]/g,"") || "UN",
+    valorUnitario: Math.round(vlUnit * 10000) / 10000,
+    valorTotal: Math.round(vlTotal * 100) / 100
+  };
+}
+
+// Estratégia A — formato "DESCRIÇÃO (Código: 123) Qtde.: 1 UN: UN Vl. Unit.: 9,99 Vl. Total: 9,99"
+// (formato do DANFE NFC-e online, usado por vários portais estaduais)
+function estrategiaCodigo(texto){
+  const itens = [];
+  // divide o texto em blocos que começam numa linha com "(Código..."
+  const re = /([^\n\r]+?)\s*\(\s*C[óo]d(?:igo)?\.?\s*:?\s*[\w.\-\/]*\s*\)/gi;
+  const marcas = [];
+  let m;
+  while((m = re.exec(texto))){
+    marcas.push({desc: m[1].trim(), inicio: m.index + m[0].length});
+  }
+  for(let i = 0; i < marcas.length; i++){
+    const fim = (i + 1 < marcas.length) ? marcas[i+1].inicio - marcas[i+1].desc.length - 20 : texto.length;
+    const corpo = texto.slice(marcas[i].inicio, Math.max(marcas[i].inicio, fim));
+    const q  = corpo.match(/Qtde?\.?\s*:?\s*([\d.,]+)/i);
+    const u  = corpo.match(/\bUN\s*:?\s*([A-Za-zÀ-ú0-9]{1,8})/i);
+    const vu = corpo.match(/Vl\.?\s*Unit(?:[áa]rio)?\.?\s*:?\s*R?\$?\s*([\d.,]+)/i);
+    const vt = corpo.match(/Vl\.?\s*Total\s*:?\s*R?\$?\s*([\d.,]+)/i);
+    const item = validarItem(marcas[i].desc, q && q[1], u && u[1], vu && vu[1], vt && vt[1]);
+    if(item) itens.push(item);
+  }
+  return itens;
+}
+
+// Estratégia B — linhas de tabela (células separadas por TAB ou 2+ espaços),
+// como ao copiar a tabela de itens do portal da SEFAZ-MG.
+// Colunas variam (pode ter código, NCM, CFOP…), então classificamos as células.
+function estrategiaTabela(texto){
+  const itens = [];
+  for(const linhaBruta of texto.split(/\r?\n/)){
+    const celulas = linhaBruta.split(/\t+|\s{2,}/).map(c => c.trim()).filter(Boolean);
+    if(celulas.length < 4) continue;
+    const item = interpretarCelulas(celulas);
+    if(item) itens.push(item);
+  }
+  return itens;
+}
+
+// Classifica as células de uma linha de tabela em descrição/qtd/unidade/valores.
+function interpretarCelulas(celulas){
+  let idxUn = -1;
+  for(let i = 0; i < celulas.length; i++){
+    if(ehUnidade(celulas[i])) idxUn = i; // fica com a última ocorrência
+  }
+  if(idxUn === -1) return null;
+
+  // descrição = célula com letras mais longa (ignorando a unidade)
+  let desc = "", idxDesc = -1;
+  for(let i = 0; i < celulas.length; i++){
+    if(i === idxUn) continue;
+    const c = celulas[i];
+    const letras = (c.match(/[A-Za-zÀ-ú]/g) || []).length;
+    if(letras >= 3 && c.length > desc.length){ desc = c; idxDesc = i; }
+  }
+  if(idxDesc === -1) return null;
+
+  // números candidatos: com vírgula decimal (dinheiro/quantidade)
+  // — evita confundir com NCM/CFOP/códigos, que são inteiros longos sem vírgula
+  const nums = [];
+  for(let i = 0; i < celulas.length; i++){
+    if(i === idxDesc || i === idxUn) continue;
+    const c = celulas[i].replace(/^R\$\s*/i,"");
+    if(/^[\d.]+,\d+$/.test(c) || /^\d{1,4}$/.test(c)){
+      nums.push({i, v: parseNumeroBR(c), temVirgula: c.includes(",")});
+    }
+  }
+  const comVirgula = nums.filter(n => n.temVirgula);
+  let qtd, vlUnit, vlTotal;
+  if(comVirgula.length >= 3){
+    // padrão do portal: … Qtde | Vl.Unit | Vl.Total (as três últimas com vírgula)
+    const tres = comVirgula.slice(-3);
+    qtd = tres[0].v; vlUnit = tres[1].v; vlTotal = tres[2].v;
+    // se a ordem parecer trocada, testa qtd × unit ≈ total
+    if(Math.abs(qtd * vlUnit - vlTotal) > Math.max(0.05, vlTotal * 0.02)){
+      const perms = [
+        [tres[0].v, tres[1].v, tres[2].v],
+        [tres[1].v, tres[0].v, tres[2].v],
+        [tres[2].v, tres[0].v, tres[1].v]
+      ];
+      for(const [q,u,t] of perms){
+        if(Math.abs(q * u - t) <= Math.max(0.05, t * 0.02)){ qtd = q; vlUnit = u; vlTotal = t; break; }
+      }
+    }
+  } else if(comVirgula.length === 2){
+    // quantidade veio como inteiro sem vírgula
+    const inteiros = nums.filter(n => !n.temVirgula);
+    qtd = inteiros.length ? inteiros[inteiros.length-1].v : 1;
+    vlUnit = comVirgula[0].v; vlTotal = comVirgula[1].v;
+    if(Math.abs(qtd * vlUnit - vlTotal) > Math.max(0.05, vlTotal * 0.02) &&
+       Math.abs(qtd * vlTotal - vlUnit) <= Math.max(0.05, vlUnit * 0.02)){
+      [vlUnit, vlTotal] = [vlTotal, vlUnit];
+    }
+  } else {
+    return null;
+  }
+  return validarItem(desc, qtd, celulas[idxUn], vlUnit, vlTotal);
+}
+
+// Estratégia C — linha única separada por espaços simples:
+// "1 7891234 ARROZ TIO JOAO 5KG 1 UN 25,90 25,90"
+function estrategiaLinhaUnica(texto){
+  const itens = [];
+  const re = /^(?:\d{1,3}\s+)?(?:\d{4,14}\s+)?(.+?)\s+([\d.,]+)\s+([A-Za-z]{1,6})\.?\s+R?\$?\s*([\d.]+,\d{2,})\s+R?\$?\s*([\d.]+,\d{2,})\s*$/;
+  for(const linha of texto.split(/\r?\n/)){
+    const m = linha.trim().match(re);
+    if(!m || !ehUnidade(m[3])) continue;
+    const item = validarItem(m[1], m[2], m[3], m[4], m[5]);
+    if(item) itens.push(item);
+  }
+  return itens;
+}
+
+// Estratégia D — células em linhas separadas (uma célula da tabela por linha),
+// comum ao copiar no celular: descrição \n qtd \n unidade \n vl.unit \n vl.total
+function estrategiaLinhasSeparadas(texto){
+  const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const itens = [];
+  let ultimaUsada = -1; // evita reaproveitar linhas de um item anterior
+  for(let j = 2; j < linhas.length; j++){
+    // âncora: linha que é só a unidade, precedida por uma linha numérica (qtd)
+    if(!ehUnidade(linhas[j])) continue;
+    const qtdStr = linhas[j - 1];
+    if(!/^[\d.,]+$/.test(qtdStr)) continue;
+    // descrição: volta a partir da qtd pulando linhas numéricas (códigos de barras/NCM)
+    let idxDesc = -1;
+    for(let k = j - 2; k > ultimaUsada && k >= j - 5; k--){
+      if(/^[\d.,\-]+$/.test(linhas[k])) continue; // pula códigos numéricos
+      if((linhas[k].match(/[A-Za-zÀ-ú]/g) || []).length >= 3){ idxDesc = k; }
+      break; // a primeira linha não numérica decide (com letras ou não)
+    }
+    if(idxDesc === -1) continue;
+    // valores: as duas próximas linhas em formato de dinheiro
+    const dinheiro = [];
+    let fim = j;
+    for(let k = j + 1; k < linhas.length && dinheiro.length < 2; k++){
+      const c = linhas[k].replace(/^R\$\s*/i,"");
+      if(/^[\d.]+,\d{2,}$/.test(c)){ dinheiro.push(c); fim = k; }
+      else break;
+    }
+    if(dinheiro.length < 2) continue;
+    const item = validarItem(linhas[idxDesc], qtdStr, linhas[j], dinheiro[0], dinheiro[1]);
+    if(item){ itens.push(item); ultimaUsada = fim; j = fim; }
+  }
+  return itens;
+}
+
+// Extrai cabeçalho (estabelecimento, CNPJ, data, total) do texto colado.
+function extrairCabecalho(texto){
+  const linhas = texto.split(/\r?\n/).map(l => l.trim());
+  let cnpj = "", estabelecimento = "", dataISO = "", total = NaN;
+
+  const mCnpj = texto.match(/(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})/);
+  if(mCnpj) cnpj = mCnpj[1];
+
+  // estabelecimento: linha "Razão social", ou a linha não vazia acima do CNPJ,
+  // ou a primeira linha com nome (letras) do texto
+  const mRazao = texto.match(/raz[ãa]o\s+social\s*:?\s*([^\n\r]+)/i);
+  if(mRazao){
+    estabelecimento = mRazao[1].trim();
+  } else if(mCnpj){
+    const idxLinhaCnpj = linhas.findIndex(l => l.includes(mCnpj[1]));
+    for(let i = idxLinhaCnpj; i >= 0; i--){
+      const l = linhas[i].replace(/CNPJ.*$/i,"").trim();
+      if(l && (l.match(/[A-Za-zÀ-ú]/g) || []).length >= 3 && !/^(cnpj|consulta|danfe|nfc|nota|documento|sefaz)/i.test(l)){
+        estabelecimento = l; break;
+      }
+    }
+  }
+  if(!estabelecimento){
+    const l = linhas.find(l => (l.match(/[A-Za-zÀ-ú]/g) || []).length >= 3);
+    if(l) estabelecimento = l;
+  }
+
+  // data: preferir a próxima de "Emissão"; senão, a primeira dd/mm/aaaa
+  let mData = texto.match(/Emiss[ãa]o[^0-9]{0,40}(\d{2})\/(\d{2})\/(\d{4})/i);
+  if(!mData) mData = texto.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if(mData) dataISO = `${mData[3]}-${mData[2]}-${mData[1]}`;
+
+  const mTotal = texto.match(/valor\s+(?:a\s+pagar|total(?:\s+da\s+nota)?)\s*:?\s*R?\$?\s*:?\s*([\d.]+,\d{2})/i);
+  if(mTotal) total = parseNumeroBR(mTotal[1]);
+
+  return {estabelecimento, cnpj, dataISO, total};
+}
+
+// Função principal do parser: tenta todas as estratégias e usa a melhor.
+function parsearTextoSefaz(texto){
+  const cab = extrairCabecalho(texto);
+  const tentativas = [
+    estrategiaCodigo(texto),
+    estrategiaTabela(texto),
+    estrategiaLinhaUnica(texto),
+    estrategiaLinhasSeparadas(texto)
+  ];
+  let itens = [];
+  for(const t of tentativas){
+    if(t.length > itens.length) itens = t;
+  }
+  return {...cab, itens};
+}
+
+/* ------------------------------------------------------------
+   Extração da chave de acesso (44 dígitos) do QR Code / URL
+   ------------------------------------------------------------ */
+function extrairChave(textoQr){
+  const t = String(textoQr || "");
+  // caso comum: parâmetro p=CHAVE|versão|amb|…
+  let m = t.match(/[?&]p=([0-9]{44})/i);
+  if(m) return m[1];
+  // qualquer sequência de 44 dígitos no texto
+  m = t.match(/([0-9]{44})/);
+  if(m) return m[1];
+  // chave digitada com espaços/pontos
+  const soDigitos = t.replace(/\D/g, "");
+  if(soDigitos.length === 44) return soDigitos;
+  return null;
+}
+
+// Monta a URL de consulta pública da NFC-e em MG a partir da chave
+// (usada quando o usuário digita só a chave, sem a URL completa).
+function urlConsultaMG(chave){
+  return "https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/consultaarg.xhtml?chaveNFe=" + chave;
+}
+
+/* ------------------------------------------------------------
+   Navegação entre telas (abas inferiores)
+   ------------------------------------------------------------ */
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+function mostrarTela(id){
+  $$("section.tela").forEach(s => s.classList.toggle("ativa", s.id === id));
+  $$("nav.abas button").forEach(b => b.classList.toggle("ativa", b.dataset.tela === id));
+  // renderiza o conteúdo da tela ao entrar
+  if(id === "tela-compras") renderizarCompras();
+  if(id === "tela-produtos") renderizarProdutos();
+  if(id === "tela-config") renderizarResumoDados();
+  if(id === "tela-inicio") renderizarBusca();
+  if(id !== "tela-ler") pararCamera(); // não deixar a câmera ligada fora da tela
+}
+$$("nav.abas button").forEach(b => b.addEventListener("click", () => mostrarTela(b.dataset.tela)));
+
+/* ------------------------------------------------------------
+   TELA INÍCIO — consulta rápida
+   ------------------------------------------------------------ */
+
+// Agrupa todos os itens por nomeNormalizado e calcula estatísticas.
+function agruparProdutos(itens){
+  const grupos = new Map();
+  for(const it of itens){
+    const chave = it.nomeNormalizado || normalizarNome(it.descricaoOriginal);
+    if(!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(it);
+  }
+  const resultado = [];
+  for(const [nome, lista] of grupos){
+    lista.sort((a,b) => String(a.data).localeCompare(String(b.data)));
+    const menor = lista.reduce((m, it) => (it.valorUnitario < m.valorUnitario ? it : m), lista[0]);
+    const media = lista.reduce((s, it) => s + it.valorUnitario, 0) / lista.length;
+    const ultimo = lista[lista.length - 1];
+    resultado.push({nome, itens: lista, menor, media, ultimo, unidade: ultimo.unidade});
+  }
+  return resultado;
+}
+
+let cacheItens = null; // cache simples; invalidado a cada gravação
+async function obterItens(){
+  if(!cacheItens) cacheItens = await dbTodosItens();
+  return cacheItens;
+}
+function invalidarCache(){ cacheItens = null; }
+
+async function renderizarBusca(){
+  const alvo = $("#resultado-busca");
+  const termo = normalizarNome($("#busca-produto").value);
+  const precoGondola = parseNumeroBR($("#preco-gondola").value);
+  const itens = await obterItens();
+
+  if(itens.length === 0){
+    alvo.innerHTML = `<div class="cartao centro">
+      <p style="font-size:2.2rem">🧾</p>
+      <p><b>Nenhuma compra registrada ainda.</b></p>
+      <p class="suave" style="margin-top:6px">Vá em <b>Ler nota</b> para importar sua primeira nota fiscal.</p>
+    </div>`;
+    return;
+  }
+  if(!termo){
+    alvo.innerHTML = `<p class="suave centro" style="margin-top:16px">Digite o nome de um produto para ver o histórico de preços.</p>`;
+    return;
+  }
+
+  const palavras = termo.split(" ");
+  const grupos = agruparProdutos(itens).filter(g => {
+    const alvoBusca = g.nome + " " + g.itens.map(i => normalizarNome(i.descricaoOriginal)).join(" ");
+    return palavras.every(p => alvoBusca.includes(p));
+  });
+
+  if(grupos.length === 0){
+    alvo.innerHTML = `<div class="aviso">Nenhum produto encontrado para “${esc($("#busca-produto").value)}”.</div>`;
+    return;
+  }
+
+  // vários produtos casam: mostra lista de sugestões para escolher
+  if(grupos.length > 1){
+    alvo.innerHTML = `<p class="suave" style="margin:8px 0">${grupos.length} produtos encontrados — toque para ver:</p>
+      <div class="sugestoes">` +
+      grupos.slice(0, 20).map(g =>
+        `<button data-nome="${esc(g.nome)}"><b>${esc(g.nome)}</b><br>
+         <span class="suave">menor: ${fmtMoeda(g.menor.valorUnitario)}/${esc(g.unidade)} · média: ${fmtMoeda(g.media)}</span></button>`
+      ).join("") + `</div>`;
+    alvo.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+      $("#busca-produto").value = b.dataset.nome;
+      renderizarBusca();
+    }));
+    return;
+  }
+
+  // um único produto: mostra o painel completo
+  const g = grupos[0];
+  let veredito = "";
+  if(isFinite(precoGondola) && precoGondola > 0){
+    const abaixo = precoGondola <= g.media;
+    const dif = Math.abs(precoGondola - g.media) / g.media * 100;
+    veredito = `<div class="veredito ${abaixo ? "bom" : "ruim"}">
+      ${abaixo ? "✅ BOM PREÇO" : "⚠️ CARO"} — ${fmtMoeda(precoGondola)} está
+      ${dif.toFixed(0)}% ${abaixo ? "abaixo/na" : "acima da"} média (${fmtMoeda(g.media)})
+    </div>`;
+  }
+
+  const historico = [...g.itens].reverse().map(it => `
+    <div class="hist-item">
+      <div>
+        <div>${esc(it.estabelecimento || "—")}</div>
+        <div class="suave">${fmtData(it.data)} · ${fmtQtd(it.quantidade)} ${esc(it.unidade)} · ${esc(it.descricaoOriginal)}</div>
+      </div>
+      <div class="preco ${it.valorUnitario === g.menor.valorUnitario ? "menor-hist" : ""}">
+        ${fmtMoeda(it.valorUnitario)}/${esc(it.unidade)}
+      </div>
+    </div>`).join("");
+
+  alvo.innerHTML = `
+    <h2 style="margin:10px 0 4px">${esc(g.nome)}</h2>
+    ${veredito}
+    <div class="stats">
+      <div class="stat menor">
+        <div class="rotulo">Menor preço</div>
+        <div class="valor">${fmtMoeda(g.menor.valorUnitario)}<small>/${esc(g.menor.unidade)}</small></div>
+        <div class="detalhe">${esc(g.menor.estabelecimento || "—")}<br>${fmtData(g.menor.data)}</div>
+      </div>
+      <div class="stat">
+        <div class="rotulo">Média</div>
+        <div class="valor">${fmtMoeda(g.media)}</div>
+        <div class="detalhe">${g.itens.length} compra${g.itens.length > 1 ? "s" : ""}</div>
+      </div>
+      <div class="stat">
+        <div class="rotulo">Último pago</div>
+        <div class="valor">${fmtMoeda(g.ultimo.valorUnitario)}</div>
+        <div class="detalhe">${esc(g.ultimo.estabelecimento || "—")}<br>${fmtData(g.ultimo.data)}</div>
+      </div>
+    </div>
+    <div class="cartao">
+      <h3>Histórico completo</h3>
+      ${historico}
+    </div>`;
+}
+$("#busca-produto").addEventListener("input", renderizarBusca);
+$("#preco-gondola").addEventListener("input", renderizarBusca);
+
+/* ------------------------------------------------------------
+   TELA LER NOTA — câmera, chave, colar texto, conferência
+   ------------------------------------------------------------ */
+let scanner = null;        // instância do Html5Qrcode
+let chaveAtual = null;     // chave de acesso em processamento
+let urlSefazAtual = null;  // URL para abrir a nota
+let notaEmConferencia = null; // {estabelecimento, cnpj, dataISO, itens[]}
+
+function mostrarBlocoLeitura(id){
+  ["bloco-captura","bloco-colar","bloco-conferencia","bloco-manual"]
+    .forEach(b => $("#"+b).classList.toggle("escondido", b !== id));
+}
+
+async function iniciarCamera(){
+  if(typeof Html5Qrcode === "undefined"){
+    alert("A biblioteca de leitura de QR não carregou (sem internet?). Use o campo de colar a URL/chave.");
+    return;
+  }
+  try{
+    scanner = new Html5Qrcode("leitor-qr");
+    $("#btn-iniciar-camera").style.display = "none";
+    $("#btn-parar-camera").style.display = "block";
+    await scanner.start(
+      {facingMode:"environment"},
+      {fps:10, qrbox:{width:250, height:250}},
+      (textoDecodificado) => { pararCamera(); processarChave(textoDecodificado); },
+      () => {} // erros de frame são normais, ignorar
+    );
+  }catch(e){
+    pararCamera();
+    alert("Não foi possível acessar a câmera: " + (e && e.message ? e.message : e));
+  }
+}
+
+function pararCamera(){
+  $("#btn-iniciar-camera").style.display = "block";
+  $("#btn-parar-camera").style.display = "none";
+  if(scanner){
+    const s = scanner; scanner = null;
+    s.stop().then(() => s.clear()).catch(() => {});
+  }
+}
+
+// Recebe o texto do QR (ou digitado), extrai a chave e segue o fluxo.
+async function processarChave(texto){
+  const chave = extrairChave(texto);
+  if(!chave){
+    alert("Não encontrei uma chave de acesso de 44 dígitos. Confira o QR Code ou o texto digitado.");
+    return;
+  }
+  // verificação de duplicidade
+  const existente = await dbGetCompra(chave);
+  if(existente){
+    alert(`⚠️ Esta nota já foi importada!\n\n${existente.estabelecimento || ""} — ${fmtData(existente.data)}\nTotal: ${fmtMoeda(existente.total)}`);
+    return;
+  }
+  chaveAtual = chave;
+  // se o QR trouxe a URL completa da SEFAZ, usa ela; senão monta a de consulta
+  urlSefazAtual = /^https?:\/\//i.test(String(texto).trim()) ? String(texto).trim() : urlConsultaMG(chave);
+  $("#info-chave").innerHTML = `Chave lida com sucesso:<br><small style="word-break:break-all">${chave}</small>`;
+  $("#link-sefaz").href = urlSefazAtual;
+  $("#texto-colado").value = "";
+  $("#erro-parse").innerHTML = "";
+  mostrarBlocoLeitura("bloco-colar");
+}
+
+// Extrai itens do texto colado e abre a tela de conferência.
+function extrairDoTextoColado(){
+  const texto = $("#texto-colado").value;
+  if(!texto.trim()){
+    $("#erro-parse").innerHTML = `<div class="aviso erro">Cole primeiro o texto copiado da página da SEFAZ.</div>`;
+    return;
+  }
+  const r = parsearTextoSefaz(texto);
+  if(r.itens.length === 0){
+    $("#erro-parse").innerHTML = `<div class="aviso erro">
+      Não consegui identificar itens no texto colado. 😕<br>
+      Verifique se copiou a página inteira da nota (com a tabela de produtos).
+      Se preferir, use o <b>cadastro manual</b>.</div>`;
+    return;
+  }
+  notaEmConferencia = r;
+  abrirConferencia();
+}
+
+function abrirConferencia(){
+  const n = notaEmConferencia;
+  $("#conf-estab").value = n.estabelecimento || "";
+  $("#conf-cnpj").value = n.cnpj || "";
+  $("#conf-data").value = n.dataISO || hojeISO();
+  renderizarItensConferencia();
+  mostrarBlocoLeitura("bloco-conferencia");
+}
+
+function renderizarItensConferencia(){
+  const alvo = $("#lista-conferencia");
+  const n = notaEmConferencia;
+  $("#conf-qtd-itens").textContent = n.itens.length + " itens";
+  alvo.innerHTML = n.itens.map((it, i) => `
+    <div class="item-conf" data-i="${i}">
+      <button class="remover" title="Remover item">✕</button>
+      <label>Descrição</label>
+      <input type="text" class="c-desc" value="${esc(it.descricao)}">
+      <div class="grade">
+        <div><label>Qtd</label><input type="text" inputmode="decimal" class="c-qtd" value="${fmtQtd(it.quantidade)}"></div>
+        <div><label>Unid.</label><input type="text" class="c-un" value="${esc(it.unidade)}"></div>
+        <div><label>Vl. unit (R$)</label><input type="text" inputmode="decimal" class="c-vu" value="${it.valorUnitario.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:4})}"></div>
+      </div>
+    </div>`).join("");
+  alvo.querySelectorAll(".remover").forEach(b => b.addEventListener("click", (ev) => {
+    const i = Number(ev.target.closest(".item-conf").dataset.i);
+    lerItensDaTela();
+    notaEmConferencia.itens.splice(i, 1);
+    renderizarItensConferencia();
+  }));
+}
+
+// Lê os valores editados de volta para o objeto em memória.
+function lerItensDaTela(){
+  const blocos = $$("#lista-conferencia .item-conf");
+  const novos = [];
+  for(const b of blocos){
+    const desc = b.querySelector(".c-desc").value.trim();
+    const qtd = parseNumeroBR(b.querySelector(".c-qtd").value);
+    const un = b.querySelector(".c-un").value.trim().toUpperCase() || "UN";
+    const vu = parseNumeroBR(b.querySelector(".c-vu").value);
+    if(desc && isFinite(qtd) && qtd > 0 && isFinite(vu) && vu > 0){
+      novos.push({descricao: desc, quantidade: qtd, unidade: un,
+                  valorUnitario: vu, valorTotal: Math.round(qtd * vu * 100) / 100});
+    }
+  }
+  notaEmConferencia.itens = novos;
+}
+
+async function salvarNota(){
+  lerItensDaTela();
+  const n = notaEmConferencia;
+  if(n.itens.length === 0){ alert("A nota precisa ter pelo menos um item válido."); return; }
+  const estab = $("#conf-estab").value.trim() || "Estabelecimento não informado";
+  const dataISO = $("#conf-data").value || hojeISO();
+  const chave = chaveAtual || ("manual-" + Date.now());
+  const total = n.itens.reduce((s, it) => s + it.valorTotal, 0);
+
+  const compra = {
+    chave,
+    estabelecimento: estab,
+    cnpj: $("#conf-cnpj").value.trim(),
+    data: dataISO,
+    total: Math.round(total * 100) / 100
+  };
+  const itens = n.itens.map(it => ({
+    compraId: chave,
+    descricaoOriginal: it.descricao,
+    nomeNormalizado: normalizarNome(it.descricao),
+    quantidade: it.quantidade,
+    unidade: it.unidade,
+    valorUnitario: it.valorUnitario,
+    valorTotal: it.valorTotal,
+    estabelecimento: estab,
+    data: dataISO
+  }));
+  await dbSalvarCompra(compra, itens);
+  invalidarCache();
+  chaveAtual = null; notaEmConferencia = null;
+  mostrarBlocoLeitura("bloco-captura");
+  alert(`✅ Compra salva!\n${itens.length} itens de ${estab}.`);
+  mostrarTela("tela-inicio");
+}
+
+// Cadastro manual de item avulso.
+async function salvarManual(){
+  const produto = $("#man-produto").value.trim();
+  const preco = parseNumeroBR($("#man-preco").value);
+  const qtd = parseNumeroBR($("#man-qtd").value) || 1;
+  const un = $("#man-unidade").value;
+  const mercado = $("#man-mercado").value.trim() || "Não informado";
+  const dataISO = $("#man-data").value || hojeISO();
+  const msg = $("#msg-manual");
+  if(!produto || !isFinite(preco) || preco <= 0){
+    msg.innerHTML = `<div class="aviso erro">Preencha pelo menos o produto e um preço válido.</div>`;
+    return;
+  }
+  const chave = "manual-" + Date.now();
+  const compra = {chave, estabelecimento: mercado, cnpj: "", data: dataISO,
+                  total: Math.round(preco * qtd * 100) / 100};
+  const item = {
+    compraId: chave, descricaoOriginal: produto,
+    nomeNormalizado: normalizarNome(produto),
+    quantidade: qtd, unidade: un, valorUnitario: preco,
+    valorTotal: Math.round(preco * qtd * 100) / 100,
+    estabelecimento: mercado, data: dataISO
+  };
+  await dbSalvarCompra(compra, [item]);
+  invalidarCache();
+  $("#man-produto").value = ""; $("#man-preco").value = "";
+  msg.innerHTML = `<div class="aviso ok">✅ Item “${esc(produto)}” salvo!</div>`;
+}
+
+// eventos da tela Ler nota
+$("#btn-iniciar-camera").addEventListener("click", iniciarCamera);
+$("#btn-parar-camera").addEventListener("click", pararCamera);
+$("#btn-usar-chave").addEventListener("click", () => processarChave($("#chave-manual").value));
+$("#btn-extrair").addEventListener("click", extrairDoTextoColado);
+$("#btn-voltar-captura").addEventListener("click", () => mostrarBlocoLeitura("bloco-captura"));
+$("#btn-ir-manual").addEventListener("click", () => {
+  $("#man-data").value = hojeISO();
+  mostrarBlocoLeitura("bloco-manual");
+});
+$("#btn-voltar-manual").addEventListener("click", () => mostrarBlocoLeitura("bloco-captura"));
+$("#btn-salvar-manual").addEventListener("click", salvarManual);
+$("#btn-salvar-nota").addEventListener("click", salvarNota);
+$("#btn-cancelar-conf").addEventListener("click", () => {
+  notaEmConferencia = null; chaveAtual = null;
+  mostrarBlocoLeitura("bloco-captura");
+});
+$("#btn-add-item-conf").addEventListener("click", () => {
+  lerItensDaTela();
+  notaEmConferencia.itens.push({descricao:"", quantidade:1, unidade:"UN", valorUnitario:0, valorTotal:0});
+  renderizarItensConferencia();
+});
+
+/* ------------------------------------------------------------
+   TELA COMPRAS — lista de notas importadas
+   ------------------------------------------------------------ */
+async function renderizarCompras(){
+  const alvo = $("#lista-compras");
+  const compras = (await dbTodasCompras()).sort((a,b) => String(b.data).localeCompare(String(a.data)));
+  if(compras.length === 0){
+    alvo.innerHTML = `<p class="suave centro">Nenhuma compra registrada ainda.</p>`;
+    return;
+  }
+  const itens = await obterItens();
+  const contagem = new Map();
+  for(const it of itens){
+    contagem.set(it.compraId, (contagem.get(it.compraId) || 0) + 1);
+  }
+  alvo.innerHTML = compras.map(c => `
+    <div class="cartao" data-chave="${esc(c.chave)}" style="margin-bottom:8px">
+      <div class="compra-cab">
+        <div>
+          <b>${esc(c.estabelecimento || "—")}</b>
+          <div class="suave">${fmtData(c.data)} · ${contagem.get(c.chave) || 0} itens
+            ${String(c.chave).startsWith("manual-") ? '<span class="tag">manual</span>' : ""}</div>
+        </div>
+        <div class="total">${fmtMoeda(c.total)}</div>
+      </div>
+      <div class="detalhe-compra escondido" style="margin-top:10px"></div>
+    </div>`).join("");
+
+  // expandir/contrair detalhe da compra ao tocar
+  alvo.querySelectorAll(".cartao").forEach(card => {
+    card.querySelector(".compra-cab").addEventListener("click", async () => {
+      const det = card.querySelector(".detalhe-compra");
+      if(!det.classList.contains("escondido")){ det.classList.add("escondido"); return; }
+      const chave = card.dataset.chave;
+      const lista = await dbItensDaCompra(chave);
+      det.innerHTML = lista.map(it => `
+        <div class="hist-item">
+          <div>${esc(it.descricaoOriginal)}<div class="suave">${fmtQtd(it.quantidade)} ${esc(it.unidade)} × ${fmtMoeda(it.valorUnitario)}</div></div>
+          <div class="preco">${fmtMoeda(it.valorTotal)}</div>
+        </div>`).join("") +
+        `<button class="botao perigo mini" style="margin-top:10px">🗑️ Excluir esta nota</button>`;
+      det.classList.remove("escondido");
+      det.querySelector("button").addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        if(!confirm("Excluir esta nota e todos os seus itens do histórico?")) return;
+        await dbExcluirCompra(chave);
+        invalidarCache();
+        renderizarCompras();
+      });
+    });
+  });
+}
+
+/* ------------------------------------------------------------
+   TELA PRODUTOS — lista + unificação de nomes normalizados
+   ------------------------------------------------------------ */
+async function renderizarProdutos(){
+  const alvo = $("#lista-produtos");
+  const filtro = normalizarNome($("#filtro-produtos").value);
+  const itens = await obterItens();
+  let grupos = agruparProdutos(itens).sort((a,b) => a.nome.localeCompare(b.nome));
+  if(filtro) grupos = grupos.filter(g => g.nome.includes(filtro));
+  if(grupos.length === 0){
+    alvo.innerHTML = `<p class="suave centro">Nenhum produto ${filtro ? "encontrado" : "registrado ainda"}.</p>`;
+    return;
+  }
+  alvo.innerHTML = grupos.map(g => `
+    <div class="produto-linha" data-nome="${esc(g.nome)}">
+      <input type="checkbox" class="sel-produto">
+      <div class="info">
+        <div class="nome">${esc(g.nome)} <span class="tag">${g.itens.length}×</span></div>
+        <div class="precos">último ${fmtMoeda(g.ultimo.valorUnitario)} · média ${fmtMoeda(g.media)} · menor ${fmtMoeda(g.menor.valorUnitario)}/${esc(g.unidade)}</div>
+      </div>
+      <button class="botao mini secundario btn-renomear" title="Renomear">✏️</button>
+    </div>`).join("");
+  alvo.querySelectorAll(".btn-renomear").forEach(b => b.addEventListener("click", async (ev) => {
+    const linha = ev.target.closest(".produto-linha");
+    const atual = linha.dataset.nome;
+    const novo = prompt("Novo nome para este produto:", atual);
+    if(!novo || normalizarNome(novo) === atual) return;
+    await dbRenomearGrupo([atual], normalizarNome(novo));
+    invalidarCache();
+    renderizarProdutos();
+  }));
+}
+
+async function unificarSelecionados(){
+  const selecionados = $$("#lista-produtos .produto-linha")
+    .filter(l => l.querySelector(".sel-produto").checked)
+    .map(l => l.dataset.nome);
+  if(selecionados.length < 2){
+    alert("Marque pelo menos 2 produtos para unificar.");
+    return;
+  }
+  const nome = prompt(
+    "Nome único para estes produtos:\n\n• " + selecionados.join("\n• "),
+    selecionados[0]
+  );
+  if(!nome) return;
+  await dbRenomearGrupo(selecionados, normalizarNome(nome));
+  invalidarCache();
+  renderizarProdutos();
+}
+$("#filtro-produtos").addEventListener("input", renderizarProdutos);
+$("#btn-unificar").addEventListener("click", unificarSelecionados);
+
+/* ------------------------------------------------------------
+   TELA CONFIG — backup (exportar/importar) e apagar tudo
+   ------------------------------------------------------------ */
+async function renderizarResumoDados(){
+  const compras = await dbTodasCompras();
+  const itens = await obterItens();
+  $("#resumo-dados").innerHTML =
+    `📊 <b>${compras.length}</b> compras · <b>${itens.length}</b> itens · ` +
+    `<b>${agruparProdutos(itens).length}</b> produtos distintos`;
+}
+
+async function exportarBackup(){
+  const dados = {
+    aplicativo: "QuantoPaguei",
+    versao: 1,
+    exportadoEm: new Date().toISOString(),
+    compras: await dbTodasCompras(),
+    itens: (await dbTodosItens()).map(({id, ...resto}) => resto) // id é local, não exporta
+  };
+  const blob = new Blob([JSON.stringify(dados, null, 1)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `quantopaguei-backup-${hojeISO()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  $("#msg-config").innerHTML = `<div class="aviso ok">✅ Backup gerado. Guarde o arquivo em local seguro (Drive, e-mail…).</div>`;
+}
+
+async function importarBackup(arquivo){
+  const msg = $("#msg-config");
+  try{
+    const texto = await arquivo.text();
+    const dados = JSON.parse(texto);
+    if(!dados || !Array.isArray(dados.compras) || !Array.isArray(dados.itens)){
+      throw new Error("Arquivo não parece ser um backup do QuantoPaguei.");
+    }
+    let novas = 0, puladas = 0;
+    for(const compra of dados.compras){
+      if(!compra || !compra.chave) continue;
+      const existe = await dbGetCompra(compra.chave);
+      if(existe){ puladas++; continue; }
+      const itensDaCompra = dados.itens.filter(it => it && it.compraId === compra.chave);
+      await dbSalvarCompra(compra, itensDaCompra);
+      novas++;
+    }
+    invalidarCache();
+    renderizarResumoDados();
+    msg.innerHTML = `<div class="aviso ok">✅ Importação concluída: <b>${novas}</b> compras adicionadas` +
+      (puladas ? `, <b>${puladas}</b> já existiam (puladas)` : "") + `.</div>`;
+  }catch(e){
+    msg.innerHTML = `<div class="aviso erro">Erro ao importar: ${esc(e.message || e)}</div>`;
+  }
+}
+
+async function apagarTudo(){
+  if(!confirm("⚠️ Isso apaga TODAS as compras e itens deste aparelho.\n\nTem certeza?")) return;
+  if(!confirm("Última confirmação: apagar tudo mesmo? Não dá para desfazer.")) return;
+  await dbApagarTudo();
+  invalidarCache();
+  renderizarResumoDados();
+  $("#msg-config").innerHTML = `<div class="aviso ok">Todos os dados foram apagados.</div>`;
+}
+
+$("#btn-exportar").addEventListener("click", exportarBackup);
+$("#input-importar").addEventListener("change", (ev) => {
+  const f = ev.target.files[0];
+  if(f) importarBackup(f);
+  ev.target.value = ""; // permite reimportar o mesmo arquivo
+});
+$("#btn-apagar-tudo").addEventListener("click", apagarTudo);
+
+/* ------------------------------------------------------------
+   Inicialização
+   ------------------------------------------------------------ */
+abrirBanco()
+  .then(() => renderizarBusca())
+  .catch(e => {
+    document.body.insertAdjacentHTML("afterbegin",
+      `<div class="aviso erro" style="margin:12px">Erro ao abrir o banco de dados local: ${esc(e && e.message || e)}.
+       Verifique se o navegador permite armazenamento (modo anônimo pode bloquear o IndexedDB).</div>`);
+  });
+</script>
+</body>
+</html>
