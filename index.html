@@ -174,12 +174,23 @@ textarea{min-height:140px;font-family:inherit}
      ============================================================ -->
 <section id="tela-inicio" class="tela ativa">
   <div class="cartao busca-grande">
+    <h2>🔎 Modo comparação</h2>
+    <p class="suave" style="margin-bottom:8px">Consultar aqui <b>não registra compra</b> — serve só para saber se o preço que você achou está bom.</p>
     <label for="busca-produto">Qual produto você está olhando?</label>
-    <input type="search" id="busca-produto" placeholder="ex.: arroz, peito de frango…" autocomplete="off">
-    <div style="margin-top:8px">
-      <label for="preco-gondola">Preço na gôndola (opcional, para comparar)</label>
-      <input type="text" id="preco-gondola" inputmode="decimal" placeholder="ex.: 15,90" autocomplete="off">
+    <input type="search" id="busca-produto" placeholder="ex.: arroz, coca cola…" autocomplete="off">
+    <div class="linha-flex" style="margin-top:8px">
+      <div style="flex:2">
+        <label for="preco-gondola">Preço que você viu (R$)</label>
+        <input type="text" id="preco-gondola" inputmode="decimal" placeholder="ex.: 15,90" autocomplete="off">
+      </div>
+      <div>
+        <label for="pack-gondola">Pack de quantas?</label>
+        <input type="text" id="pack-gondola" inputmode="numeric" value="1">
+      </div>
     </div>
+    <button class="botao secundario" id="btn-foto" style="margin-top:10px">📸 Ler etiqueta por foto</button>
+    <input type="file" id="input-foto" accept="image/*" capture="environment" class="escondido">
+    <div id="status-ocr"></div>
   </div>
   <div id="resultado-busca"></div>
 </section>
@@ -319,7 +330,7 @@ textarea{min-height:140px;font-family:inherit}
 
 <!-- barra de navegação inferior -->
 <nav class="abas">
-  <button data-tela="tela-inicio" class="ativa"><span class="ico">🔍</span>Consulta</button>
+  <button data-tela="tela-inicio" class="ativa"><span class="ico">🔍</span>Comparar</button>
   <button data-tela="tela-ler"><span class="ico">📷</span>Ler nota</button>
   <button data-tela="tela-compras"><span class="ico">🧾</span>Compras</button>
   <button data-tela="tela-produtos"><span class="ico">📦</span>Produtos</button>
@@ -806,6 +817,33 @@ function detectarPack(descricao){
 }
 
 /* ------------------------------------------------------------
+   Apoio à comparação por FOTO da etiqueta de preço (OCR):
+   extrai do texto reconhecido o preço e o provável nome do produto.
+   ------------------------------------------------------------ */
+// Escolhe o preço mais provável: prefere valores precedidos de "R$"
+// (preço principal da etiqueta); usa o primeiro encontrado.
+function extrairPrecoOcr(texto){
+  const t = String(texto || "");
+  const comRS = [...t.matchAll(/R\$\s*(\d{1,4}[.,]\d{2})\b/gi)].map(m => parseNumeroBR(m[1]));
+  const soltos = [...t.matchAll(/(\d{1,4},\d{2})\b/g)].map(m => parseNumeroBR(m[1]));
+  const cands = (comRS.length ? comRS : soltos).filter(v => isFinite(v) && v > 0 && v < 10000);
+  return cands.length ? cands[0] : NaN;
+}
+// O nome do produto costuma ser a linha com mais letras (e poucos números)
+// depois de remover os preços.
+function extrairNomeOcr(texto){
+  let melhor = "";
+  for(const linha of String(texto || "").split(/\r?\n/)){
+    const semPreco = linha.replace(/R\$\s*[\d.,]+/gi, " ").replace(/\d+[.,]\d{2}/g, " ")
+                          .replace(/\s+/g, " ").trim();
+    const letras = (semPreco.match(/[A-Za-zÀ-ú]/g) || []).length;
+    const digitos = (semPreco.match(/\d/g) || []).length;
+    if(letras >= 4 && letras > digitos * 2 && semPreco.length > melhor.length) melhor = semPreco;
+  }
+  return melhor;
+}
+
+/* ------------------------------------------------------------
    Navegação entre telas (abas inferiores)
    ------------------------------------------------------------ */
 const $ = (sel) => document.querySelector(sel);
@@ -911,14 +949,58 @@ async function renderizarBusca(){
   // (todos os valores comparados são POR UNIDADE: um pack de 6 é dividido por 6)
   const g = grupos[0];
   const temPack = g.itens.some(it => packDe(it) > 1);
+  const rotG = temPack ? "un" : rotuloUnit(g.ultimo); // rótulo da unidade nas comparações
   let veredito = "";
   if(isFinite(precoGondola) && precoGondola > 0){
-    const abaixo = precoGondola <= g.media;
-    const dif = Math.abs(precoGondola - g.media) / g.media * 100;
-    veredito = `<div class="veredito ${abaixo ? "bom" : "ruim"}">
-      ${abaixo ? "✅ BOM PREÇO" : "⚠️ CARO"} — ${fmtMoeda(precoGondola)} está
-      ${dif.toFixed(0)}% ${abaixo ? "abaixo/na" : "acima da"} média${temPack ? " por unidade" : ""} (${fmtMoeda(g.media)})
+    // o preço visto pode ser de um pack: divide para comparar por unidade
+    const packG = Math.max(1, Math.round(parseNumeroBR($("#pack-gondola").value)) || 1);
+    const pg = precoGondola / packG;
+    const vMenor = precoUnit(g.menor), vUlt = precoUnit(g.ultimo);
+    // uma linha de comparação: preço achado × referência histórica
+    const linha = (rot, val, quem) => {
+      const barato = pg <= val + 1e-9;
+      const dif = val > 0 ? Math.abs(pg - val) / val * 100 : 0;
+      return `<div style="font-size:.85rem;font-weight:400;margin-top:6px;text-align:left">
+        ${barato ? "🟢" : "🔴"} ${rot}: <b>${fmtMoeda(val)}/${rotG}</b>${quem ? ` — ${esc(quem)}` : ""}<br>
+        &nbsp;&nbsp;&nbsp;→ o que você achou está <b>${dif.toFixed(0)}% ${barato ? "mais barato (ou igual)" : "mais caro"}</b></div>`;
+    };
+    let titulo, classe;
+    if(pg <= vMenor + 1e-9){ titulo = "🏆 MELHOR PREÇO QUE VOCÊ JÁ VIU!"; classe = "bom"; }
+    else if(pg <= g.media){ titulo = "✅ BOM PREÇO (abaixo da sua média)"; classe = "bom"; }
+    else { titulo = "⚠️ CARO (acima da sua média)"; classe = "ruim"; }
+    veredito = `<div class="veredito ${classe}">
+      ${titulo}
+      <div style="font-size:.85rem;font-weight:400;margin-top:2px">
+        Você achou por ${fmtMoeda(precoGondola)}${packG > 1 ? ` o pack c/ ${packG} = <b>${fmtMoeda(pg)}/un</b>` : ""}
+      </div>
+      ${linha("Menor já pago", vMenor, `${g.menor.estabelecimento || "—"} (${fmtData(g.menor.data)})`)}
+      ${linha("Última compra", vUlt, `${g.ultimo.estabelecimento || "—"} (${fmtData(g.ultimo.data)})`)}
+      ${linha("Média das suas compras", g.media, "")}
     </div>`;
+  }
+
+  // resumo por forma de compra (pack × avulsa) — mantém os dois registros à vista
+  let formasHtml = "";
+  if(temPack){
+    const formas = new Map(); // nº de unidades no pack -> {menor, ultimo}
+    for(const it of g.itens){
+      const p = packDe(it);
+      const f = formas.get(p);
+      if(!f) formas.set(p, {menor: it, ultimo: it});
+      else {
+        if(precoUnit(it) < precoUnit(f.menor)) f.menor = it;
+        f.ultimo = it; // g.itens já está em ordem de data
+      }
+    }
+    formasHtml = `<div class="cartao"><h3>Como você já comprou</h3>` +
+      [...formas.entries()].sort((a,b) => a[0] - b[0]).map(([p, f]) => `
+      <div class="hist-item">
+        <div>
+          <div>${p > 1 ? `📦 Pack c/ ${p}` : "🧍 Avulsa (unidade)"}</div>
+          <div class="suave">menor: ${fmtMoeda(f.menor.valorUnitario)}${p > 1 ? " o pack" : ""} · ${esc(f.menor.estabelecimento || "—")} (${fmtData(f.menor.data)})</div>
+        </div>
+        <div class="preco">${fmtMoeda(precoUnit(f.menor))}/${esc(rotuloUnit(f.menor))}</div>
+      </div>`).join("") + `</div>`;
   }
 
   const historico = [...g.itens].reverse().map(it => `
@@ -953,6 +1035,7 @@ async function renderizarBusca(){
         <div class="detalhe">${esc(g.ultimo.estabelecimento || "—")}<br>${fmtData(g.ultimo.data)}</div>
       </div>
     </div>
+    ${formasHtml}
     <div class="cartao">
       <h3>Histórico completo</h3>
       ${historico}
@@ -960,6 +1043,58 @@ async function renderizarBusca(){
 }
 $("#busca-produto").addEventListener("input", renderizarBusca);
 $("#preco-gondola").addEventListener("input", renderizarBusca);
+$("#pack-gondola").addEventListener("input", renderizarBusca);
+
+/* ------------------------------------------------------------
+   Comparação por FOTO da etiqueta (OCR com Tesseract via CDN)
+   A biblioteca só é baixada quando o usuário usa a foto pela
+   primeira vez (precisa de internet nesse primeiro uso).
+   ------------------------------------------------------------ */
+let promTesseract = null; // promessa do carregamento da biblioteca
+let ocrWorker = null;     // worker reutilizado entre fotos
+
+function carregarTesseract(){
+  if(window.Tesseract) return Promise.resolve();
+  if(!promTesseract){
+    promTesseract = new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+      s.onload = res;
+      s.onerror = () => { promTesseract = null; rej(new Error("não deu para baixar o leitor de fotos — verifique a internet")); };
+      document.head.appendChild(s);
+    });
+  }
+  return promTesseract;
+}
+
+async function processarFoto(arquivo){
+  const st = $("#status-ocr");
+  try{
+    st.innerHTML = `<div class="aviso">⏳ Lendo a foto… (na primeira vez o leitor é baixado, pode demorar alguns segundos)</div>`;
+    await carregarTesseract();
+    if(!ocrWorker) ocrWorker = await Tesseract.createWorker("por");
+    const {data} = await ocrWorker.recognize(arquivo);
+    const textoLido = (data && data.text) || "";
+    const preco = extrairPrecoOcr(textoLido);
+    const nome = extrairNomeOcr(textoLido);
+    if(!isFinite(preco) && !nome){
+      st.innerHTML = `<div class="aviso erro">Não consegui ler preço nem nome nessa foto. 😕 Tente de novo mais perto da etiqueta, com boa luz e sem tremer.</div>`;
+      return;
+    }
+    if(nome) $("#busca-produto").value = nome;
+    if(isFinite(preco)) $("#preco-gondola").value = preco.toLocaleString("pt-BR", {minimumFractionDigits:2});
+    st.innerHTML = `<div class="aviso ok">📸 Li da etiqueta: ${nome ? `“${esc(nome)}”` : "(nome não identificado)"}${isFinite(preco) ? ` — ${fmtMoeda(preco)}` : ""}.<br>Confira/corrija os campos acima se precisar.</div>`;
+    renderizarBusca();
+  }catch(e){
+    st.innerHTML = `<div class="aviso erro">Erro ao ler a foto: ${esc((e && e.message) || e)}</div>`;
+  }
+}
+$("#btn-foto").addEventListener("click", () => $("#input-foto").click());
+$("#input-foto").addEventListener("change", (ev) => {
+  const f = ev.target.files[0];
+  if(f) processarFoto(f);
+  ev.target.value = ""; // permite fotografar de novo em seguida
+});
 
 /* ------------------------------------------------------------
    TELA LER NOTA — câmera, chave, colar texto, conferência
