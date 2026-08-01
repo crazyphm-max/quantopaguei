@@ -510,7 +510,8 @@ function dbApagarTudo(){
 // Unidades comerciais reconhecidas.
 const UNIDADES = new Set([
   "UN","UND","UNID","UNIDADE","PC","PCT","PT","CX","KG","G","GR","L","LT","LITRO",
-  "ML","DZ","SC","FD","BD","GL","KT","JG","PAR","RL","TP","M","CM","BF","BJ","BAND","POTE","LATA","FR","GF","EMB"
+  "ML","DZ","SC","FD","BD","GL","KT","JG","PAR","RL","TP","M","CM","BF","BJ","BAND","POTE","LATA","FR","GF","EMB",
+  "CJ","CT","BDJ","GRF","AMP","SAC","TB","VD"
 ]);
 
 function ehUnidade(tok){
@@ -538,24 +539,29 @@ function validarItem(desc, qtd, un, vlUnit, vlTotal){
   };
 }
 
-// Estratégia A — formato "DESCRIÇÃO (Código: 123) Qtde.: 1 UN: UN Vl. Unit.: 9,99 Vl. Total: 9,99"
-// (formato do DANFE NFC-e online, usado por vários portais estaduais)
+// Estratégia A — itens marcados com "(Código: 123)". Cobre dois formatos:
+//   "DESCRIÇÃO (Código: 123) Qtde.: 1 UN: UN Vl. Unit.: 9,99 Vl. Total: 9,99"
+//   "DESCRIÇÃO (Código: 123)  Qtde total de ítens: 1.0000  UN: CX  Valor total R$: R$ 8,98"
+// (o segundo é o do portal da NFC-e de MG; não traz valor unitário — é derivado do total)
 function estrategiaCodigo(texto){
   const itens = [];
-  // divide o texto em blocos que começam numa linha com "(Código..."
+  // marca a posição de cada "(Código...)" e o início da linha de descrição
   const re = /([^\n\r]+?)\s*\(\s*C[óo]d(?:igo)?\.?\s*:?\s*[\w.\-\/]*\s*\)/gi;
   const marcas = [];
   let m;
   while((m = re.exec(texto))){
-    marcas.push({desc: m[1].trim(), inicio: m.index + m[0].length});
+    marcas.push({desc: m[1].trim(), inicio: m.index + m[0].length, inicioDesc: m.index});
   }
   for(let i = 0; i < marcas.length; i++){
-    const fim = (i + 1 < marcas.length) ? marcas[i+1].inicio - marcas[i+1].desc.length - 20 : texto.length;
-    const corpo = texto.slice(marcas[i].inicio, Math.max(marcas[i].inicio, fim));
-    const q  = corpo.match(/Qtde?\.?\s*:?\s*([\d.,]+)/i);
+    // o "corpo" do item vai do fim do (Código...) até o começo da descrição seguinte
+    const fim = (i + 1 < marcas.length) ? marcas[i+1].inicioDesc : texto.length;
+    const corpo = texto.slice(marcas[i].inicio, fim);
+    // "Qtde.: 1" ou "Qtde total de ítens: 1.0000" (aceita texto entre Qtde e os dois-pontos)
+    const q  = corpo.match(/Qtde?[^:\n]*:\s*([\d.,]+)/i);
     const u  = corpo.match(/\bUN\s*:?\s*([A-Za-zÀ-ú0-9]{1,8})/i);
     const vu = corpo.match(/Vl\.?\s*Unit(?:[áa]rio)?\.?\s*:?\s*R?\$?\s*([\d.,]+)/i);
-    const vt = corpo.match(/Vl\.?\s*Total\s*:?\s*R?\$?\s*([\d.,]+)/i);
+    // "Vl. Total 25,90" ou "Valor total R$: R$ 8,98"
+    const vt = corpo.match(/(?:Vl\.?|Valor)\s*Total(?:[^:\n\d]*:)?\s*R?\$?\s*R?\$?\s*([\d.,]+)/i);
     const item = validarItem(marcas[i].desc, q && q[1], u && u[1], vu && vu[1], vt && vt[1]);
     if(item) itens.push(item);
   }
@@ -716,7 +722,12 @@ function extrairCabecalho(texto){
   if(!mData) mData = texto.match(/(\d{2})\/(\d{2})\/(\d{4})/);
   if(mData) dataISO = `${mData[3]}-${mData[2]}-${mData[1]}`;
 
-  const mTotal = texto.match(/valor\s+(?:a\s+pagar|total(?:\s+da\s+nota)?)\s*:?\s*R?\$?\s*:?\s*([\d.]+,\d{2})/i);
+  // total da nota: prioriza "Valor pago"/"Valor a pagar"; o valor pode vir na
+  // linha seguinte e com ponto decimal (formato do portal de MG: "398.33")
+  const mTotal =
+    texto.match(/valor\s+pago\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/i) ||
+    texto.match(/valor\s+a\s+pagar\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/i) ||
+    texto.match(/valor\s+total(?:\s+da\s+nota)?\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/i);
   if(mTotal) total = parseNumeroBR(mTotal[1]);
 
   return {estabelecimento, cnpj, dataISO, total};
