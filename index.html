@@ -187,6 +187,11 @@ body.aguardando main, body.aguardando nav.abas{display:none}
     <h2 class="centro" style="font-size:1.3rem">QuantoPaguei</h2>
     <p class="suave centro">Crie sua conta gratuita para usar o app.<br>
       Seus preços ficam salvos na nuvem e no seu aparelho.</p>
+    <button class="botao secundario" id="btn-google" style="display:flex;align-items:center;justify-content:center;gap:8px">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.2 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.2 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C41.4 35.4 44 30.2 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>
+      Continuar com o Google
+    </button>
+    <div class="suave centro" style="margin:10px 0">— ou com e-mail e senha —</div>
     <div class="abas-login">
       <button class="botao mini secundario ativa" id="aba-entrar">Entrar</button>
       <button class="botao mini secundario" id="aba-cadastrar">Criar conta</button>
@@ -209,6 +214,15 @@ body.aguardando main, body.aguardando nav.abas{display:none}
       <label>Senha (mínimo 6 caracteres)</label>
       <input type="password" id="cad-senha" autocomplete="new-password">
       <button class="botao" id="btn-cadastrar">Criar conta grátis</button>
+    </div>
+    <!-- etapa extra após login com Google: capturar o telefone -->
+    <div id="form-telefone" class="escondido">
+      <div class="aviso ok">✅ Login com Google feito! Falta só concluir seu cadastro:</div>
+      <label>Seu nome</label>
+      <input type="text" id="tel-nome" autocomplete="name">
+      <label>Celular (WhatsApp)</label>
+      <input type="tel" id="tel-telefone" inputmode="tel" placeholder="(31) 99999-9999" autocomplete="tel">
+      <button class="botao" id="btn-concluir-cadastro">Concluir cadastro</button>
     </div>
     <div id="msg-login"></div>
   </div>
@@ -1745,6 +1759,25 @@ function mostrarApp(){
 function mostrarLogin(){
   document.body.classList.add("aguardando");
   $("#tela-login").classList.remove("escondido");
+  // estado normal dos formulários (esconde a etapa do telefone)
+  $("#btn-google").classList.remove("escondido");
+  document.querySelector(".abas-login").classList.remove("escondido");
+  $("#form-telefone").classList.add("escondido");
+  const entrarAtivo = $("#aba-entrar").classList.contains("ativa");
+  $("#form-entrar").classList.toggle("escondido", !entrarAtivo);
+  $("#form-cadastrar").classList.toggle("escondido", entrarAtivo);
+}
+
+// etapa pós-Google: só a caixinha de nome + telefone
+function mostrarCompletarCadastro(){
+  document.body.classList.add("aguardando");
+  $("#tela-login").classList.remove("escondido");
+  $("#btn-google").classList.add("escondido");
+  document.querySelector(".abas-login").classList.add("escondido");
+  $("#form-entrar").classList.add("escondido");
+  $("#form-cadastrar").classList.add("escondido");
+  $("#form-telefone").classList.remove("escondido");
+  $("#tel-nome").value = (usuarioNuvem && usuarioNuvem.displayName) || "";
 }
 
 // traduz os códigos de erro do Firebase para mensagens amigáveis
@@ -1759,7 +1792,11 @@ function erroLoginPt(e){
     "auth/user-not-found": "Não existe conta com este e-mail. Crie uma na aba Criar conta.",
     "auth/too-many-requests": "Muitas tentativas — aguarde alguns minutos.",
     "auth/network-request-failed": "Sem internet. Tente novamente quando conectar.",
-    "auth/unauthorized-domain": "Este endereço ainda não foi autorizado no Firebase (peça ao desenvolvedor)."
+    "auth/unauthorized-domain": "Este endereço ainda não foi autorizado no Firebase (peça ao desenvolvedor).",
+    "auth/popup-closed-by-user": "A janela do Google foi fechada antes de concluir. Tente de novo.",
+    "auth/cancelled-popup-request": "A janela do Google foi fechada antes de concluir. Tente de novo.",
+    "auth/operation-not-allowed": "Este método de login ainda não foi ativado no Firebase (peça ao desenvolvedor).",
+    "auth/account-exists-with-different-credential": "Este e-mail já tem conta com senha — use a aba Entrar com e-mail e senha."
   };
   return mapa[cod] || ("Erro: " + ((e && e.message) || e));
 }
@@ -1776,6 +1813,8 @@ async function fazerLogin(){
   }catch(e){ msg.innerHTML = `<div class="aviso erro">${esc(erroLoginPt(e))}</div>`; }
 }
 
+let cadastroEmAndamento = false; // evita a tela do telefone piscar durante o cadastro por e-mail
+
 async function fazerCadastro(){
   const msg = $("#msg-login");
   const nome = $("#cad-nome").value.trim();
@@ -1787,17 +1826,71 @@ async function fazerCadastro(){
     return;
   }
   msg.innerHTML = `<div class="aviso">⏳ Criando sua conta…</div>`;
+  cadastroEmAndamento = true;
   try{
     const cred = await fbAuth.createUserWithEmailAndPassword(email, senha);
     await cred.user.updateProfile({displayName: nome});
     // perfil = seu cadastro/lead: nome, telefone, e-mail, plano e trial
+    perfilNuvem = {nome, telefone, email, plano: "free", trialAte: null};
     await fbDb.collection("perfis").doc(cred.user.uid).set({
-      nome, telefone, email,
-      plano: "free",
-      trialAte: null,
+      ...perfilNuvem,
       criadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
+    localStorage.setItem("qp-perfil", JSON.stringify(perfilNuvem));
     msg.innerHTML = "";
+    usuarioNuvem = cred.user;
+    mostrarApp();
+    renderizarConta();
+    sincronizarNuvem();
+  }catch(e){ msg.innerHTML = `<div class="aviso erro">${esc(erroLoginPt(e))}</div>`; }
+  finally{ cadastroEmAndamento = false; }
+}
+
+// Login/cadastro com a conta Google. O Google não informa telefone,
+// então na primeira vez mostramos a etapa "concluir cadastro".
+async function entrarComGoogle(){
+  const msg = $("#msg-login");
+  msg.innerHTML = `<div class="aviso">⏳ Abrindo a janela do Google…</div>`;
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try{
+    await fbAuth.signInWithPopup(provider);
+    msg.innerHTML = "";
+  }catch(e){
+    // alguns celulares bloqueiam a janelinha: usa o redirecionamento
+    if(e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")){
+      try{ await fbAuth.signInWithRedirect(provider); return; }catch(e2){ e = e2; }
+    }
+    msg.innerHTML = `<div class="aviso erro">${esc(erroLoginPt(e))}</div>`;
+  }
+}
+
+// salva nome + telefone após o primeiro login com Google
+async function concluirCadastro(){
+  const msg = $("#msg-login");
+  const nome = $("#tel-nome").value.trim();
+  const telefone = $("#tel-telefone").value.trim();
+  if(!nome || !telefone){
+    msg.innerHTML = `<div class="aviso erro">Preencha seu nome e o celular.</div>`;
+    return;
+  }
+  msg.innerHTML = `<div class="aviso">⏳ Salvando…</div>`;
+  try{
+    const base = perfilNuvem || {};
+    perfilNuvem = {
+      nome, telefone,
+      email: (usuarioNuvem && usuarioNuvem.email) || base.email || "",
+      plano: base.plano || "free",
+      trialAte: base.trialAte !== undefined ? base.trialAte : null
+    };
+    await fbDb.collection("perfis").doc(usuarioNuvem.uid).set({
+      ...perfilNuvem,
+      criadoEm: base.criadoEm || firebase.firestore.FieldValue.serverTimestamp()
+    }, {merge: true});
+    localStorage.setItem("qp-perfil", JSON.stringify(perfilNuvem));
+    msg.innerHTML = "";
+    mostrarApp();
+    renderizarConta();
+    sincronizarNuvem();
   }catch(e){ msg.innerHTML = `<div class="aviso erro">${esc(erroLoginPt(e))}</div>`; }
 }
 
@@ -1814,11 +1907,13 @@ async function esqueciSenha(){
 async function carregarPerfil(){
   try{
     const doc = await fbDb.collection("perfis").doc(usuarioNuvem.uid).get();
-    if(doc.exists) perfilNuvem = doc.data();
+    perfilNuvem = doc.exists ? doc.data() : null;
     localStorage.setItem("qp-perfil", JSON.stringify(perfilNuvem || {}));
+    return true; // conseguiu consultar (mesmo que o perfil ainda não exista)
   }catch(e){
     // offline: usa o perfil guardado da última vez
     try{ perfilNuvem = JSON.parse(localStorage.getItem("qp-perfil") || "null"); }catch(_){ }
+    return false;
   }
 }
 
@@ -1958,6 +2053,8 @@ $("#aba-cadastrar").addEventListener("click", () => {
 $("#btn-entrar").addEventListener("click", fazerLogin);
 $("#btn-cadastrar").addEventListener("click", fazerCadastro);
 $("#btn-esqueci").addEventListener("click", esqueciSenha);
+$("#btn-google").addEventListener("click", entrarComGoogle);
+$("#btn-concluir-cadastro").addEventListener("click", concluirCadastro);
 $("#btn-sair").addEventListener("click", sairDaConta);
 
 // decide entre app e tela de login
@@ -1984,10 +2081,16 @@ function iniciarNuvem(){
   // enfileiradas e enviadas automaticamente quando a conexão voltar
   fbDb.enablePersistence({synchronizeTabs: true}).catch(() => {});
   fbAuth.onAuthStateChanged(async (u) => {
+    if(cadastroEmAndamento) return; // o fluxo de cadastro por e-mail conclui sozinho
     if(u){
       usuarioNuvem = u;
       localStorage.setItem("qp-uid", u.uid);
-      await carregarPerfil();
+      const consultou = await carregarPerfil();
+      // login via Google sem telefone ainda: pede para concluir o cadastro
+      if(consultou && (!perfilNuvem || !perfilNuvem.telefone)){
+        mostrarCompletarCadastro();
+        return;
+      }
       mostrarApp();
       renderizarConta();
       sincronizarNuvem();
