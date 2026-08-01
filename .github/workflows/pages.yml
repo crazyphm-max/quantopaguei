@@ -1,0 +1,39 @@
+# Publica o site no GitHub Pages automaticamente a cada push.
+# O passo "configure-pages" com enablement:true ativa o Pages sozinho
+# na primeira execução — não é preciso mexer nas configurações do repositório.
+name: Publicar no GitHub Pages
+
+on:
+  push:
+    branches: ["claude/quantopaguei-preco-historico-98nkpj", "main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+      - name: Ativar/configurar o GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Empacotar o site (pasta raiz)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+      - name: Publicar
+        id: deployment
+        uses: actions/deploy-pages@v4
