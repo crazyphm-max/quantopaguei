@@ -9,6 +9,11 @@
      Se estiver offline e a lib não carregar, o app continua funcionando:
      apenas a leitura por câmera fica indisponível (há entrada manual da chave). -->
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- Firebase (login + banco na nuvem). Se estiver offline e os scripts não
+     carregarem, o app entra em modo offline para quem já fez login antes. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 /* ============================================================
    QuantoPaguei — estilos (mobile-first, uso com uma mão)
@@ -159,11 +164,55 @@ textarea{min-height:140px;font-family:inherit}
 .produto-linha .precos{font-size:.78rem;color:var(--texto-suave);margin-top:2px}
 .produto-linha input[type=checkbox]{width:20px;height:20px;flex:none}
 .tag{display:inline-block;background:var(--cinza);border-radius:6px;padding:1px 6px;font-size:.7rem;margin-left:4px}
+
+/* --- tela de login/cadastro --- */
+body.aguardando main, body.aguardando nav.abas{display:none}
+#tela-login{position:fixed;inset:0;background:var(--fundo);z-index:100;overflow:auto;padding:12px}
+#tela-login .abas-login{display:flex;gap:8px;margin:12px 0}
+#tela-login .abas-login .botao{margin-top:0}
+#tela-login .abas-login .botao.ativa{background:var(--verde);color:#fff;border-color:var(--verde)}
+#tela-login label{margin-top:8px}
 </style>
 </head>
-<body>
+<body class="aguardando">
 
 <header class="topo"><span class="logo">🛒</span><h1>QuantoPaguei</h1></header>
+
+<!-- ============================================================
+     TELA DE LOGIN / CADASTRO (cobre o app até a pessoa entrar)
+     ============================================================ -->
+<div id="tela-login" class="escondido">
+  <div class="cartao" style="max-width:420px;margin:24px auto">
+    <div class="centro" style="font-size:3rem">🛒</div>
+    <h2 class="centro" style="font-size:1.3rem">QuantoPaguei</h2>
+    <p class="suave centro">Crie sua conta gratuita para usar o app.<br>
+      Seus preços ficam salvos na nuvem e no seu aparelho.</p>
+    <div class="abas-login">
+      <button class="botao mini secundario ativa" id="aba-entrar">Entrar</button>
+      <button class="botao mini secundario" id="aba-cadastrar">Criar conta</button>
+    </div>
+    <div id="form-entrar">
+      <label>E-mail</label>
+      <input type="email" id="login-email" autocomplete="email">
+      <label>Senha</label>
+      <input type="password" id="login-senha" autocomplete="current-password">
+      <button class="botao" id="btn-entrar">Entrar</button>
+      <button class="botao secundario" id="btn-esqueci">Esqueci minha senha</button>
+    </div>
+    <div id="form-cadastrar" class="escondido">
+      <label>Seu nome</label>
+      <input type="text" id="cad-nome" autocomplete="name">
+      <label>Celular (WhatsApp)</label>
+      <input type="tel" id="cad-telefone" inputmode="tel" placeholder="(31) 99999-9999" autocomplete="tel">
+      <label>E-mail</label>
+      <input type="email" id="cad-email" autocomplete="email">
+      <label>Senha (mínimo 6 caracteres)</label>
+      <input type="password" id="cad-senha" autocomplete="new-password">
+      <button class="botao" id="btn-cadastrar">Criar conta grátis</button>
+    </div>
+    <div id="msg-login"></div>
+  </div>
+</div>
 
 <main>
 
@@ -308,6 +357,12 @@ textarea{min-height:140px;font-family:inherit}
      TELA 5 — CONFIGURAÇÕES / BACKUP
      ============================================================ -->
 <section id="tela-config" class="tela">
+  <div class="cartao">
+    <h2>👤 Minha conta</h2>
+    <div id="info-conta" class="suave">—</div>
+    <div id="status-sync" class="suave" style="margin-top:4px"></div>
+    <button class="botao secundario" id="btn-sair">Sair da conta</button>
+  </div>
   <div class="cartao">
     <h2>⚙️ Backup e dados</h2>
     <p class="suave">Os dados ficam salvos <b>apenas neste navegador</b>. Exporte um backup de tempos em tempos para não perder o histórico.</p>
@@ -965,7 +1020,7 @@ function ligarSalvarVisto(nomeBase){
       return;
     }
     localStorage.setItem("qp-ultimo-mercado-visto", mercado);
-    await dbSalvarItens([{
+    const itemVisto = {
       compraId: "visto-" + Date.now(),
       descricaoOriginal: nomeBase,
       nomeNormalizado: normalizarNome(nomeBase),
@@ -977,7 +1032,9 @@ function ligarSalvarVisto(nomeBase){
       estabelecimento: mercado,
       data: hojeISO(),
       ehVisto: true
-    }]);
+    };
+    await dbSalvarItens([itemVisto]);
+    nuvemEspelharVisto(itemVisto);
     invalidarCache();
     renderizarBusca();
   });
@@ -1111,7 +1168,7 @@ async function renderizarBusca(){
         <div class="preco ${Math.abs(precoUnit(it) - precoUnit(g.menor)) < 1e-9 ? "menor-hist" : ""}">
           ${fmtMoeda(precoUnit(it))}/${esc(rotuloUnit(it))}
         </div>
-        ${it.ehVisto ? `<button class="del-visto" data-id="${it.id}" title="Excluir este preço visto"
+        ${it.ehVisto ? `<button class="del-visto" data-id="${it.id}" data-cid="${esc(it.compraId)}" title="Excluir este preço visto"
           style="background:none;border:none;color:var(--vermelho);font-size:1rem;cursor:pointer;padding:4px">✕</button>` : ""}
       </div>
     </div>`).join("");
@@ -1151,6 +1208,7 @@ async function renderizarBusca(){
   alvo.querySelectorAll(".del-visto").forEach(b => b.addEventListener("click", async () => {
     if(!confirm("Excluir este preço visto do histórico?")) return;
     await dbExcluirItem(Number(b.dataset.id));
+    nuvemExcluirVisto(b.dataset.cid);
     invalidarCache();
     renderizarBusca();
   }));
@@ -1379,6 +1437,7 @@ async function salvarNota(){
     data: dataISO
   }));
   await dbSalvarCompra(compra, itens);
+  nuvemEspelharCompra(compra, itens); // cópia na nuvem (fila offline automática)
   invalidarCache();
   chaveAtual = null; notaEmConferencia = null;
   mostrarBlocoLeitura("bloco-captura");
@@ -1412,6 +1471,7 @@ async function salvarManual(){
     estabelecimento: mercado, data: dataISO
   };
   await dbSalvarCompra(compra, [item]);
+  nuvemEspelharCompra(compra, [item]);
   invalidarCache();
   $("#man-produto").value = ""; $("#man-preco").value = ""; $("#man-pack").value = "1";
   msg.innerHTML = `<div class="aviso ok">✅ Item “${esc(produto)}” salvo!</div>`;
@@ -1490,6 +1550,7 @@ async function renderizarCompras(){
         ev.stopPropagation();
         if(!confirm("Excluir esta nota e todos os seus itens do histórico?")) return;
         await dbExcluirCompra(chave);
+        nuvemExcluirCompra(chave);
         invalidarCache();
         renderizarCompras();
       });
@@ -1525,6 +1586,7 @@ async function renderizarProdutos(){
     const novo = prompt("Novo nome para este produto:", atual);
     if(!novo || normalizarNome(novo) === atual) return;
     await dbRenomearGrupo([atual], normalizarNome(novo));
+    nuvemReenviarTudo(); // atualiza os nomes também na nuvem
     invalidarCache();
     renderizarProdutos();
   }));
@@ -1544,6 +1606,7 @@ async function unificarSelecionados(){
   );
   if(!nome) return;
   await dbRenomearGrupo(selecionados, normalizarNome(nome));
+  nuvemReenviarTudo();
   invalidarCache();
   renderizarProdutos();
 }
@@ -1560,6 +1623,7 @@ async function renderizarResumoDados(){
   $("#resumo-dados").innerHTML =
     `📊 <b>${compras.length}</b> compras · <b>${itens.length - vistos}</b> itens · ` +
     `<b>${vistos}</b> preços vistos · <b>${agruparProdutos(itens).length}</b> produtos distintos`;
+  renderizarConta();
 }
 
 async function exportarBackup(){
@@ -1610,6 +1674,7 @@ async function importarBackup(arquivo){
       novosVistos = paraAdicionar.length;
     }
     invalidarCache();
+    nuvemReenviarTudo(); // sobe o backup importado para a nuvem também
     renderizarResumoDados();
     msg.innerHTML = `<div class="aviso ok">✅ Importação concluída: <b>${novas}</b> compras adicionadas` +
       (novosVistos ? `, <b>${novosVistos}</b> preços vistos` : "") +
@@ -1620,9 +1685,10 @@ async function importarBackup(arquivo){
 }
 
 async function apagarTudo(){
-  if(!confirm("⚠️ Isso apaga TODAS as compras e itens deste aparelho.\n\nTem certeza?")) return;
+  if(!confirm("⚠️ Isso apaga TODAS as compras e itens deste aparelho E da sua conta na nuvem.\n\nTem certeza?")) return;
   if(!confirm("Última confirmação: apagar tudo mesmo? Não dá para desfazer.")) return;
   await dbApagarTudo();
+  nuvemApagarTudo();
   invalidarCache();
   renderizarResumoDados();
   $("#msg-config").innerHTML = `<div class="aviso ok">Todos os dados foram apagados.</div>`;
@@ -1636,11 +1702,307 @@ $("#input-importar").addEventListener("change", (ev) => {
 });
 $("#btn-apagar-tudo").addEventListener("click", apagarTudo);
 
+/* ============================================================
+   NUVEM — login, perfil (lead + plano free/premium) e sincronização
+   Firebase Authentication + Firestore. O IndexedDB continua sendo a
+   fonte local (o app funciona offline dentro do mercado); a nuvem
+   guarda uma cópia por usuário e permite trocar de aparelho.
+   ============================================================ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCr2zkYOJbUwE7RH8Idn7NqhlfTJO6o88Q",
+  authDomain: "quantopaguei-6bfab.firebaseapp.com",
+  projectId: "quantopaguei-6bfab",
+  storageBucket: "quantopaguei-6bfab.firebasestorage.app",
+  messagingSenderId: "1083127309332",
+  appId: "1:1083127309332:web:acb08593193b0151a93301"
+};
+
+let fbAuth = null, fbDb = null;      // serviços do Firebase
+let usuarioNuvem = null;             // usuário logado (ou null)
+let perfilNuvem = null;              // doc do perfil (nome, telefone, plano…)
+
+function nuvemDisponivel(){ return typeof firebase !== "undefined"; }
+function podeNuvem(){ return !!(fbDb && usuarioNuvem); }
+
+// coleção do usuário logado (usuarios/{uid}/<nome>)
+function colUsuario(nome){
+  return fbDb.collection("usuarios").doc(usuarioNuvem.uid).collection(nome);
+}
+
+// remove campos locais antes de subir um item para a nuvem
+function itemParaNuvem(it){
+  const c = {...it};
+  delete c.id;
+  delete c.compraId;
+  return c;
+}
+
+function mostrarApp(){
+  document.body.classList.remove("aguardando");
+  $("#tela-login").classList.add("escondido");
+  renderizarBusca();
+}
+function mostrarLogin(){
+  document.body.classList.add("aguardando");
+  $("#tela-login").classList.remove("escondido");
+}
+
+// traduz os códigos de erro do Firebase para mensagens amigáveis
+function erroLoginPt(e){
+  const cod = (e && e.code) || "";
+  const mapa = {
+    "auth/email-already-in-use": "Este e-mail já tem conta. Use a aba Entrar.",
+    "auth/invalid-email": "E-mail inválido — confira a digitação.",
+    "auth/weak-password": "Senha muito curta: use pelo menos 6 caracteres.",
+    "auth/invalid-credential": "E-mail ou senha incorretos.",
+    "auth/wrong-password": "E-mail ou senha incorretos.",
+    "auth/user-not-found": "Não existe conta com este e-mail. Crie uma na aba Criar conta.",
+    "auth/too-many-requests": "Muitas tentativas — aguarde alguns minutos.",
+    "auth/network-request-failed": "Sem internet. Tente novamente quando conectar.",
+    "auth/unauthorized-domain": "Este endereço ainda não foi autorizado no Firebase (peça ao desenvolvedor)."
+  };
+  return mapa[cod] || ("Erro: " + ((e && e.message) || e));
+}
+
+async function fazerLogin(){
+  const msg = $("#msg-login");
+  const email = $("#login-email").value.trim();
+  const senha = $("#login-senha").value;
+  if(!email || !senha){ msg.innerHTML = `<div class="aviso erro">Preencha e-mail e senha.</div>`; return; }
+  msg.innerHTML = `<div class="aviso">⏳ Entrando…</div>`;
+  try{
+    await fbAuth.signInWithEmailAndPassword(email, senha);
+    msg.innerHTML = "";
+  }catch(e){ msg.innerHTML = `<div class="aviso erro">${esc(erroLoginPt(e))}</div>`; }
+}
+
+async function fazerCadastro(){
+  const msg = $("#msg-login");
+  const nome = $("#cad-nome").value.trim();
+  const telefone = $("#cad-telefone").value.trim();
+  const email = $("#cad-email").value.trim();
+  const senha = $("#cad-senha").value;
+  if(!nome || !telefone || !email || senha.length < 6){
+    msg.innerHTML = `<div class="aviso erro">Preencha nome, celular, e-mail e uma senha de 6+ caracteres.</div>`;
+    return;
+  }
+  msg.innerHTML = `<div class="aviso">⏳ Criando sua conta…</div>`;
+  try{
+    const cred = await fbAuth.createUserWithEmailAndPassword(email, senha);
+    await cred.user.updateProfile({displayName: nome});
+    // perfil = seu cadastro/lead: nome, telefone, e-mail, plano e trial
+    await fbDb.collection("perfis").doc(cred.user.uid).set({
+      nome, telefone, email,
+      plano: "free",
+      trialAte: null,
+      criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    msg.innerHTML = "";
+  }catch(e){ msg.innerHTML = `<div class="aviso erro">${esc(erroLoginPt(e))}</div>`; }
+}
+
+async function esqueciSenha(){
+  const msg = $("#msg-login");
+  const email = $("#login-email").value.trim();
+  if(!email){ msg.innerHTML = `<div class="aviso erro">Digite seu e-mail no campo acima e toque de novo.</div>`; return; }
+  try{
+    await fbAuth.sendPasswordResetEmail(email);
+    msg.innerHTML = `<div class="aviso ok">📧 Enviamos um link de redefinição para ${esc(email)}.</div>`;
+  }catch(e){ msg.innerHTML = `<div class="aviso erro">${esc(erroLoginPt(e))}</div>`; }
+}
+
+async function carregarPerfil(){
+  try{
+    const doc = await fbDb.collection("perfis").doc(usuarioNuvem.uid).get();
+    if(doc.exists) perfilNuvem = doc.data();
+    localStorage.setItem("qp-perfil", JSON.stringify(perfilNuvem || {}));
+  }catch(e){
+    // offline: usa o perfil guardado da última vez
+    try{ perfilNuvem = JSON.parse(localStorage.getItem("qp-perfil") || "null"); }catch(_){ }
+  }
+}
+
+// ---- espelhamento das operações locais na nuvem ----
+// (sem await: com a persistência ligada, o Firestore enfileira offline
+// e envia sozinho quando a internet voltar)
+function nuvemEspelharCompra(compra, itens){
+  if(!podeNuvem()) return;
+  colUsuario("compras").doc(compra.chave)
+    .set({...compra, itens: itens.map(itemParaNuvem)})
+    .catch(e => console.warn("nuvem compra:", e));
+}
+function nuvemExcluirCompra(chave){
+  if(!podeNuvem()) return;
+  colUsuario("compras").doc(chave).delete().catch(e => console.warn("nuvem excluir:", e));
+}
+function nuvemEspelharVisto(item){
+  if(!podeNuvem()) return;
+  colUsuario("vistos").doc(item.compraId).set(itemParaNuvem(item))
+    .catch(e => console.warn("nuvem visto:", e));
+}
+function nuvemExcluirVisto(idVisto){
+  if(!podeNuvem() || !idVisto) return;
+  colUsuario("vistos").doc(idVisto).delete().catch(e => console.warn("nuvem excluir visto:", e));
+}
+
+// reenvia TUDO (usado após renomear/unificar produtos e após importar backup)
+async function nuvemReenviarTudo(){
+  if(!podeNuvem()) return;
+  try{
+    const compras = await dbTodasCompras();
+    const itens = await dbTodosItens();
+    for(const c of compras){
+      const its = itens.filter(i => i.compraId === c.chave && !i.ehVisto);
+      colUsuario("compras").doc(c.chave).set({...c, itens: its.map(itemParaNuvem)}).catch(() => {});
+    }
+    for(const v of itens.filter(i => i.ehVisto)){
+      colUsuario("vistos").doc(v.compraId).set(itemParaNuvem(v)).catch(() => {});
+    }
+  }catch(e){ console.warn("reenviar:", e); }
+}
+
+async function nuvemApagarTudo(){
+  if(!podeNuvem()) return;
+  try{
+    const [snapC, snapV] = await Promise.all([colUsuario("compras").get(), colUsuario("vistos").get()]);
+    for(const d of snapC.docs) d.ref.delete().catch(() => {});
+    for(const d of snapV.docs) d.ref.delete().catch(() => {});
+  }catch(e){ console.warn("apagar nuvem:", e); }
+}
+
+// sincronização de mão dupla: baixa o que só existe na nuvem e sobe
+// o que só existe neste aparelho (deduplicado pela chave da nota)
+async function sincronizarNuvem(){
+  if(!podeNuvem()) return;
+  try{
+    const [snapC, snapV] = await Promise.all([colUsuario("compras").get(), colUsuario("vistos").get()]);
+    const comprasLocais = await dbTodasCompras();
+    const itensLocais = await dbTodosItens();
+    const chavesLocais = new Set(comprasLocais.map(c => c.chave));
+    const chavesNuvem = new Set();
+    for(const doc of snapC.docs){
+      chavesNuvem.add(doc.id);
+      if(!chavesLocais.has(doc.id)){
+        const d = doc.data();
+        const its = (d.itens || []).map(x => ({...x, compraId: doc.id}));
+        const compra = {...d};
+        delete compra.itens;
+        await dbSalvarCompra(compra, its);
+      }
+    }
+    for(const c of comprasLocais){
+      if(!chavesNuvem.has(c.chave)){
+        const its = itensLocais.filter(i => i.compraId === c.chave && !i.ehVisto);
+        colUsuario("compras").doc(c.chave).set({...c, itens: its.map(itemParaNuvem)}).catch(() => {});
+      }
+    }
+    const vistosLocais = itensLocais.filter(i => i.ehVisto);
+    const idsVistosLocais = new Set(vistosLocais.map(v => v.compraId));
+    const idsVistosNuvem = new Set();
+    const vistosNovos = [];
+    for(const doc of snapV.docs){
+      idsVistosNuvem.add(doc.id);
+      if(!idsVistosLocais.has(doc.id)){
+        vistosNovos.push({...doc.data(), compraId: doc.id, ehVisto: true});
+      }
+    }
+    if(vistosNovos.length) await dbSalvarItens(vistosNovos);
+    for(const v of vistosLocais){
+      if(!idsVistosNuvem.has(v.compraId)){
+        colUsuario("vistos").doc(v.compraId).set(itemParaNuvem(v)).catch(() => {});
+      }
+    }
+    invalidarCache();
+    localStorage.setItem("qp-ultima-sync", new Date().toISOString());
+    renderizarBusca();
+    renderizarConta();
+  }catch(e){ console.warn("sincronizar:", e); }
+}
+
+// cartão "Minha conta" na tela de configurações
+function renderizarConta(){
+  const info = $("#info-conta");
+  if(!info) return;
+  if(usuarioNuvem){
+    const plano = (perfilNuvem && perfilNuvem.plano) || "free";
+    const nome = (perfilNuvem && perfilNuvem.nome) || usuarioNuvem.displayName || "";
+    info.innerHTML = `<b>${esc(nome)}</b><br>${esc(usuarioNuvem.email || "")}<br>` +
+      `Plano: <b>${plano === "premium" ? "Premium ⭐" : "Gratuito"}</b>`;
+    const sync = localStorage.getItem("qp-ultima-sync");
+    $("#status-sync").textContent = sync
+      ? "☁️ Última sincronização: " + fmtData(sync.slice(0,10)) + " " + sync.slice(11,16)
+      : "☁️ Aguardando primeira sincronização…";
+  } else {
+    info.innerHTML = `Modo offline — os dados estão só neste aparelho.`;
+    $("#status-sync").textContent = "";
+  }
+}
+
+async function sairDaConta(){
+  if(!confirm("Sair da conta? Seus dados continuam salvos na nuvem e neste aparelho.")) return;
+  localStorage.removeItem("qp-uid");
+  localStorage.removeItem("qp-perfil");
+  if(fbAuth){ try{ await fbAuth.signOut(); }catch(e){} }
+  location.reload();
+}
+
+// eventos da tela de login
+$("#aba-entrar").addEventListener("click", () => {
+  $("#aba-entrar").classList.add("ativa"); $("#aba-cadastrar").classList.remove("ativa");
+  $("#form-entrar").classList.remove("escondido"); $("#form-cadastrar").classList.add("escondido");
+});
+$("#aba-cadastrar").addEventListener("click", () => {
+  $("#aba-cadastrar").classList.add("ativa"); $("#aba-entrar").classList.remove("ativa");
+  $("#form-cadastrar").classList.remove("escondido"); $("#form-entrar").classList.add("escondido");
+});
+$("#btn-entrar").addEventListener("click", fazerLogin);
+$("#btn-cadastrar").addEventListener("click", fazerCadastro);
+$("#btn-esqueci").addEventListener("click", esqueciSenha);
+$("#btn-sair").addEventListener("click", sairDaConta);
+
+// decide entre app e tela de login
+function iniciarNuvem(){
+  if(!nuvemDisponivel()){
+    // sem internet/biblioteca: quem já entrou antes usa offline; quem nunca
+    // entrou precisa de internet no primeiro acesso
+    if(localStorage.getItem("qp-uid")){
+      mostrarApp();
+      document.querySelector("header.topo").insertAdjacentHTML("afterend",
+        `<div class="aviso" style="margin:8px 12px">📴 Sem internet — usando os dados deste aparelho. A nuvem sincroniza quando conectar.</div>`);
+      try{ perfilNuvem = JSON.parse(localStorage.getItem("qp-perfil") || "null"); }catch(_){ }
+    } else {
+      mostrarLogin();
+      $("#msg-login").innerHTML =
+        `<div class="aviso erro">Sem conexão com o serviço de login. Conecte-se à internet para o primeiro acesso.</div>`;
+    }
+    return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  fbAuth = firebase.auth();
+  fbDb = firebase.firestore();
+  // persistência offline do Firestore: escritas feitas sem internet são
+  // enfileiradas e enviadas automaticamente quando a conexão voltar
+  fbDb.enablePersistence({synchronizeTabs: true}).catch(() => {});
+  fbAuth.onAuthStateChanged(async (u) => {
+    if(u){
+      usuarioNuvem = u;
+      localStorage.setItem("qp-uid", u.uid);
+      await carregarPerfil();
+      mostrarApp();
+      renderizarConta();
+      sincronizarNuvem();
+    } else {
+      usuarioNuvem = null;
+      mostrarLogin();
+    }
+  });
+}
+
 /* ------------------------------------------------------------
    Inicialização
    ------------------------------------------------------------ */
 abrirBanco()
-  .then(() => renderizarBusca())
+  .then(() => iniciarNuvem())
   .catch(e => {
     document.body.insertAdjacentHTML("afterbegin",
       `<div class="aviso erro" style="margin:12px">Erro ao abrir o banco de dados local: ${esc(e && e.message || e)}.
