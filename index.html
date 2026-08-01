@@ -139,7 +139,7 @@ textarea{min-height:140px;font-family:inherit}
 .item-conf{
   border:1px solid var(--cinza-borda);border-radius:10px;padding:10px;margin-bottom:10px;background:#fff;
 }
-.item-conf .grade{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}
+.item-conf .grade{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
 .item-conf input{padding:8px;font-size:.9rem}
 .item-conf .remover{
   float:right;background:none;border:none;color:var(--vermelho);font-size:1.1rem;cursor:pointer;padding:2px 6px;
@@ -252,6 +252,10 @@ textarea{min-height:140px;font-family:inherit}
           <option>ML</option><option>PCT</option><option>CX</option><option>DZ</option>
         </select>
       </div>
+    </div>
+    <div style="margin-top:6px">
+      <label>Unidades dentro da embalagem (ex.: pack c/ 6 garrafas = 6; avulso = 1)</label>
+      <input type="text" id="man-pack" inputmode="numeric" value="1">
     </div>
     <div class="linha-flex" style="margin-top:6px">
       <div><label>Mercado</label><input type="text" id="man-mercado" placeholder="ex.: Supermercado BH"></div>
@@ -773,6 +777,35 @@ function urlConsultaMG(chave){
 }
 
 /* ------------------------------------------------------------
+   Detecção de "pack" (fardo/caixa/engradado com várias unidades)
+   Ex.: "COCA COLA (6X600ML)" => 6 garrafas; "OVOS (1X30UN)" => 30 ovos.
+   Serve para calcular o preço de CADA unidade e comparar com a
+   compra avulsa do mesmo produto.
+   ------------------------------------------------------------ */
+function detectarPack(descricao){
+  const d = String(descricao || "").toUpperCase();
+  // padrão "6X600ML" / "12X473ML" / "25X40G" / "1X30UN"
+  let m = d.match(/(\d{1,3})\s*X\s*([\d.,]*)\s*(ML|LT|L|GR|G|KG|UN|UND)?\b/);
+  if(m){
+    const a = parseInt(m[1], 10);
+    // conteúdo contado em UN (ex.: 1X30UN = 1 caixa com 30) => total = A × B
+    if(m[3] === "UN" || m[3] === "UND"){
+      const b = parseInt(String(m[2]).replace(/\D/g, ""), 10);
+      const total = a * (isFinite(b) && b > 0 ? b : 1);
+      if(total >= 1 && total <= 999) return total;
+    }
+    if(a >= 1 && a <= 999) return a;
+  }
+  // padrão "C/6" (com 6 unidades)
+  m = d.match(/\bC\/\s*(\d{1,3})\b/);
+  if(m){
+    const a = parseInt(m[1], 10);
+    if(a >= 1 && a <= 999) return a;
+  }
+  return 1;
+}
+
+/* ------------------------------------------------------------
    Navegação entre telas (abas inferiores)
    ------------------------------------------------------------ */
 const $ = (sel) => document.querySelector(sel);
@@ -794,6 +827,15 @@ $$("nav.abas button").forEach(b => b.addEventListener("click", () => mostrarTela
    TELA INÍCIO — consulta rápida
    ------------------------------------------------------------ */
 
+// Nº de unidades dentro da embalagem do item (1 = item avulso).
+function packDe(it){ return (it && it.subQuantidade > 1) ? it.subQuantidade : 1; }
+// Preço efetivo POR UNIDADE: divide o preço do pack pelo nº de unidades.
+// É esse valor que o app usa em todas as comparações, para que um pack
+// de 6 garrafas seja comparável à compra de 1 garrafa avulsa.
+function precoUnit(it){ return it.valorUnitario / packDe(it); }
+// Rótulo da unidade na exibição ("un" quando o preço é por unidade do pack).
+function rotuloUnit(it){ return packDe(it) > 1 ? "un" : it.unidade; }
+
 // Agrupa todos os itens por nomeNormalizado e calcula estatísticas.
 function agruparProdutos(itens){
   const grupos = new Map();
@@ -805,8 +847,8 @@ function agruparProdutos(itens){
   const resultado = [];
   for(const [nome, lista] of grupos){
     lista.sort((a,b) => String(a.data).localeCompare(String(b.data)));
-    const menor = lista.reduce((m, it) => (it.valorUnitario < m.valorUnitario ? it : m), lista[0]);
-    const media = lista.reduce((s, it) => s + it.valorUnitario, 0) / lista.length;
+    const menor = lista.reduce((m, it) => (precoUnit(it) < precoUnit(m) ? it : m), lista[0]);
+    const media = lista.reduce((s, it) => s + precoUnit(it), 0) / lista.length;
     const ultimo = lista[lista.length - 1];
     resultado.push({nome, itens: lista, menor, media, ultimo, unidade: ultimo.unidade});
   }
@@ -856,7 +898,7 @@ async function renderizarBusca(){
       <div class="sugestoes">` +
       grupos.slice(0, 20).map(g =>
         `<button data-nome="${esc(g.nome)}"><b>${esc(g.nome)}</b><br>
-         <span class="suave">menor: ${fmtMoeda(g.menor.valorUnitario)}/${esc(g.unidade)} · média: ${fmtMoeda(g.media)}</span></button>`
+         <span class="suave">menor: ${fmtMoeda(precoUnit(g.menor))}/${esc(rotuloUnit(g.menor))} · média: ${fmtMoeda(g.media)}</span></button>`
       ).join("") + `</div>`;
     alvo.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
       $("#busca-produto").value = b.dataset.nome;
@@ -866,14 +908,16 @@ async function renderizarBusca(){
   }
 
   // um único produto: mostra o painel completo
+  // (todos os valores comparados são POR UNIDADE: um pack de 6 é dividido por 6)
   const g = grupos[0];
+  const temPack = g.itens.some(it => packDe(it) > 1);
   let veredito = "";
   if(isFinite(precoGondola) && precoGondola > 0){
     const abaixo = precoGondola <= g.media;
     const dif = Math.abs(precoGondola - g.media) / g.media * 100;
     veredito = `<div class="veredito ${abaixo ? "bom" : "ruim"}">
       ${abaixo ? "✅ BOM PREÇO" : "⚠️ CARO"} — ${fmtMoeda(precoGondola)} está
-      ${dif.toFixed(0)}% ${abaixo ? "abaixo/na" : "acima da"} média (${fmtMoeda(g.media)})
+      ${dif.toFixed(0)}% ${abaixo ? "abaixo/na" : "acima da"} média${temPack ? " por unidade" : ""} (${fmtMoeda(g.media)})
     </div>`;
   }
 
@@ -882,9 +926,10 @@ async function renderizarBusca(){
       <div>
         <div>${esc(it.estabelecimento || "—")}</div>
         <div class="suave">${fmtData(it.data)} · ${fmtQtd(it.quantidade)} ${esc(it.unidade)} · ${esc(it.descricaoOriginal)}</div>
+        ${packDe(it) > 1 ? `<div class="suave">📦 pack c/ ${packDe(it)} por ${fmtMoeda(it.valorUnitario)}</div>` : ""}
       </div>
-      <div class="preco ${it.valorUnitario === g.menor.valorUnitario ? "menor-hist" : ""}">
-        ${fmtMoeda(it.valorUnitario)}/${esc(it.unidade)}
+      <div class="preco ${Math.abs(precoUnit(it) - precoUnit(g.menor)) < 1e-9 ? "menor-hist" : ""}">
+        ${fmtMoeda(precoUnit(it))}/${esc(rotuloUnit(it))}
       </div>
     </div>`).join("");
 
@@ -894,17 +939,17 @@ async function renderizarBusca(){
     <div class="stats">
       <div class="stat menor">
         <div class="rotulo">Menor preço</div>
-        <div class="valor">${fmtMoeda(g.menor.valorUnitario)}<small>/${esc(g.menor.unidade)}</small></div>
+        <div class="valor">${fmtMoeda(precoUnit(g.menor))}<small>/${esc(rotuloUnit(g.menor))}</small></div>
         <div class="detalhe">${esc(g.menor.estabelecimento || "—")}<br>${fmtData(g.menor.data)}</div>
       </div>
       <div class="stat">
-        <div class="rotulo">Média</div>
+        <div class="rotulo">Média${temPack ? "/un" : ""}</div>
         <div class="valor">${fmtMoeda(g.media)}</div>
         <div class="detalhe">${g.itens.length} compra${g.itens.length > 1 ? "s" : ""}</div>
       </div>
       <div class="stat">
         <div class="rotulo">Último pago</div>
-        <div class="valor">${fmtMoeda(g.ultimo.valorUnitario)}</div>
+        <div class="valor">${fmtMoeda(precoUnit(g.ultimo))}</div>
         <div class="detalhe">${esc(g.ultimo.estabelecimento || "—")}<br>${fmtData(g.ultimo.data)}</div>
       </div>
     </div>
@@ -990,6 +1035,8 @@ function extrairDoTextoColado(){
     return;
   }
   const r = parsearTextoSefaz(texto);
+  // detecta packs (ex.: 6X600ML) para permitir o cálculo do preço por unidade
+  r.itens.forEach(it => { it.subQuantidade = detectarPack(it.descricao); });
   if(r.itens.length === 0){
     $("#erro-parse").innerHTML = `<div class="aviso erro">
       Não consegui identificar itens no texto colado. 😕<br>
@@ -1023,7 +1070,9 @@ function renderizarItensConferencia(){
         <div><label>Qtd</label><input type="text" inputmode="decimal" class="c-qtd" value="${fmtQtd(it.quantidade)}"></div>
         <div><label>Unid.</label><input type="text" class="c-un" value="${esc(it.unidade)}"></div>
         <div><label>Vl. unit (R$)</label><input type="text" inputmode="decimal" class="c-vu" value="${it.valorUnitario.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:4})}"></div>
+        <div><label>Un. no pack</label><input type="text" inputmode="numeric" class="c-pack" value="${packDe(it)}"></div>
       </div>
+      ${packDe(it) > 1 ? `<div class="suave" style="margin-top:4px">📦 Pack c/ ${packDe(it)} → ≈ ${fmtMoeda(it.valorUnitario / packDe(it))} cada unidade</div>` : ""}
     </div>`).join("");
   alvo.querySelectorAll(".remover").forEach(b => b.addEventListener("click", (ev) => {
     const i = Number(ev.target.closest(".item-conf").dataset.i);
@@ -1042,9 +1091,11 @@ function lerItensDaTela(){
     const qtd = parseNumeroBR(b.querySelector(".c-qtd").value);
     const un = b.querySelector(".c-un").value.trim().toUpperCase() || "UN";
     const vu = parseNumeroBR(b.querySelector(".c-vu").value);
+    const pack = Math.round(parseNumeroBR(b.querySelector(".c-pack").value));
     if(desc && isFinite(qtd) && qtd > 0 && isFinite(vu) && vu > 0){
       novos.push({descricao: desc, quantidade: qtd, unidade: un,
-                  valorUnitario: vu, valorTotal: Math.round(qtd * vu * 100) / 100});
+                  valorUnitario: vu, valorTotal: Math.round(qtd * vu * 100) / 100,
+                  subQuantidade: (isFinite(pack) && pack >= 1) ? pack : 1});
     }
   }
   notaEmConferencia.itens = novos;
@@ -1074,6 +1125,7 @@ async function salvarNota(){
     unidade: it.unidade,
     valorUnitario: it.valorUnitario,
     valorTotal: it.valorTotal,
+    subQuantidade: it.subQuantidade || 1,
     estabelecimento: estab,
     data: dataISO
   }));
@@ -1098,6 +1150,7 @@ async function salvarManual(){
     msg.innerHTML = `<div class="aviso erro">Preencha pelo menos o produto e um preço válido.</div>`;
     return;
   }
+  const packMan = Math.round(parseNumeroBR($("#man-pack").value));
   const chave = "manual-" + Date.now();
   const compra = {chave, estabelecimento: mercado, cnpj: "", data: dataISO,
                   total: Math.round(preco * qtd * 100) / 100};
@@ -1106,11 +1159,12 @@ async function salvarManual(){
     nomeNormalizado: normalizarNome(produto),
     quantidade: qtd, unidade: un, valorUnitario: preco,
     valorTotal: Math.round(preco * qtd * 100) / 100,
+    subQuantidade: (isFinite(packMan) && packMan >= 1) ? packMan : 1,
     estabelecimento: mercado, data: dataISO
   };
   await dbSalvarCompra(compra, [item]);
   invalidarCache();
-  $("#man-produto").value = ""; $("#man-preco").value = "";
+  $("#man-produto").value = ""; $("#man-preco").value = ""; $("#man-pack").value = "1";
   msg.innerHTML = `<div class="aviso ok">✅ Item “${esc(produto)}” salvo!</div>`;
 }
 
@@ -1124,6 +1178,10 @@ $("#btn-ir-manual").addEventListener("click", () => {
   $("#man-data").value = hojeISO();
   mostrarBlocoLeitura("bloco-manual");
 });
+// ao digitar o nome do produto, tenta detectar o pack automaticamente (ex.: "coca 6x600ml")
+$("#man-produto").addEventListener("input", (ev) => {
+  $("#man-pack").value = detectarPack(ev.target.value);
+});
 $("#btn-voltar-manual").addEventListener("click", () => mostrarBlocoLeitura("bloco-captura"));
 $("#btn-salvar-manual").addEventListener("click", salvarManual);
 $("#btn-salvar-nota").addEventListener("click", salvarNota);
@@ -1133,7 +1191,7 @@ $("#btn-cancelar-conf").addEventListener("click", () => {
 });
 $("#btn-add-item-conf").addEventListener("click", () => {
   lerItensDaTela();
-  notaEmConferencia.itens.push({descricao:"", quantidade:1, unidade:"UN", valorUnitario:0, valorTotal:0});
+  notaEmConferencia.itens.push({descricao:"", quantidade:1, unidade:"UN", valorUnitario:0, valorTotal:0, subQuantidade:1});
   renderizarItensConferencia();
 });
 
@@ -1208,7 +1266,7 @@ async function renderizarProdutos(){
       <input type="checkbox" class="sel-produto">
       <div class="info">
         <div class="nome">${esc(g.nome)} <span class="tag">${g.itens.length}×</span></div>
-        <div class="precos">último ${fmtMoeda(g.ultimo.valorUnitario)} · média ${fmtMoeda(g.media)} · menor ${fmtMoeda(g.menor.valorUnitario)}/${esc(g.unidade)}</div>
+        <div class="precos">último ${fmtMoeda(precoUnit(g.ultimo))} · média ${fmtMoeda(g.media)} · menor ${fmtMoeda(precoUnit(g.menor))}/${esc(rotuloUnit(g.menor))}</div>
       </div>
       <button class="botao mini secundario btn-renomear" title="Renomear">✏️</button>
     </div>`).join("");
