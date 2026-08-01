@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#1b5e20">
+<meta name="theme-color" content="#241B54">
 <title>QuantoPaguei — histórico de preços do supermercado</title>
 <!-- Biblioteca de leitura de QR Code pela câmera (única dependência externa).
      Se estiver offline e a lib não carregar, o app continua funcionando:
@@ -13,7 +13,7 @@
      carregarem, o app entra em modo offline para quem já fez login antes. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Baloo+2:wght@600;700;800&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -23,20 +23,23 @@
    Paleta esmeralda + dourado, cartões suaves, navegação flutuante
    ============================================================ */
 :root{
-  --verde:#0E7A5F;           /* esmeralda principal */
-  --verde-escuro:#0A3D33;    /* esmeralda profundo (header/hero) */
-  --verde-medio:#18A57F;     /* esmeralda vivo (acentos) */
-  --verde-claro:#E7F3EE;     /* fundo de destaque suave */
-  --dourado:#D9A441;         /* acento premium */
-  --vermelho:#C0392B;
-  --vermelho-claro:#FBEAE7;
-  --cinza:#F0F3F1;
-  --cinza-borda:#E4E9E6;
-  --texto:#1A201D;
-  --texto-suave:#68746E;
-  --fundo:#F4F6F5;
+  --marca:#6C4CF1;           /* violeta principal */
+  --marca-escura:#241B5E;    /* índigo profundo (header/hero) */
+  --marca-viva:#8B6DF8;      /* violeta claro (acentos) */
+  --marca-suave:#EEEAFE;     /* lavanda de fundo */
+  --menta:#12B886;           /* menta = dinheiro/economia */
+  --menta-escura:#0B7B62;
+  --menta-suave:#E3F7F0;
+  --dourado:#F2B441;         /* acento premium */
+  --vermelho:#E5484D;
+  --vermelho-claro:#FDEBEC;
+  --cinza:#F1F1F6;
+  --cinza-borda:#E7E6F1;
+  --texto:#1C1B29;
+  --texto-suave:#6E6D80;
+  --fundo:#F6F6FA;
   --radius:18px;
-  --sombra:0 1px 2px rgba(10,61,51,.05), 0 4px 18px rgba(10,61,51,.07);
+  --sombra:0 1px 2px rgba(35,26,84,.05), 0 4px 18px rgba(35,26,84,.08);
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html{font-size:16px}
@@ -49,17 +52,18 @@ body{
 
 /* --- cabeçalho --- */
 header.topo{
-  background:linear-gradient(135deg,var(--verde-escuro) 0%,var(--verde) 100%);
+  background:linear-gradient(135deg,var(--marca-escura) 0%,var(--marca) 100%);
   color:#fff;padding:18px 20px;position:sticky;top:0;z-index:50;
   display:flex;align-items:center;gap:10px;
-  box-shadow:0 2px 14px rgba(10,61,51,.28);
+  box-shadow:0 2px 14px rgba(35,26,84,.30);
 }
-header.topo h1{font-size:1.18rem;font-weight:800;letter-spacing:-.3px}
+header.topo h1{font-family:'Baloo 2',cursive,sans-serif;font-size:1.3rem;font-weight:700;letter-spacing:.1px}
 header.topo .logo{
-  font-size:1.15rem;background:rgba(255,255,255,.14);
-  border:1px solid rgba(255,255,255,.22);border-radius:12px;
-  width:38px;height:38px;display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.14);
+  border:1px solid rgba(255,255,255,.24);border-radius:12px;
+  width:40px;height:40px;display:flex;align-items:center;justify-content:center;
 }
+header.topo .logo svg{width:32px;height:32px}
 main{max-width:640px;margin:0 auto;padding:14px}
 section.tela{display:none}
 section.tela.ativa{display:block;animation:aparecer .18s ease-out}
@@ -72,7 +76,7 @@ nav.abas{
   max-width:616px;margin:0 auto;
   background:rgba(255,255,255,.96);backdrop-filter:blur(8px);
   border:1px solid var(--cinza-borda);border-radius:24px;
-  box-shadow:0 10px 34px rgba(10,61,51,.16);
+  box-shadow:0 10px 34px rgba(35,26,84,.16);
   display:flex;justify-content:space-around;padding:6px;
 }
 nav.abas button{
@@ -81,16 +85,19 @@ nav.abas button{
   font-family:inherit;font-size:.64rem;font-weight:700;color:var(--texto-suave);
   padding:8px 2px;transition:background .15s,color .15s;
 }
-nav.abas button .ico{font-size:1.28rem;line-height:1.2}
-nav.abas button.ativa{background:var(--verde-claro);color:var(--verde)}
+nav.abas button svg.ico{
+  width:22px;height:22px;margin-bottom:2px;
+  fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
+}
+nav.abas button.ativa{background:var(--marca-suave);color:var(--marca)}
 
 /* --- componentes genéricos --- */
 .cartao{
   background:#fff;border:1px solid var(--cinza-borda);border-radius:var(--radius);
   padding:18px;margin-bottom:14px;box-shadow:var(--sombra);
 }
-h2{font-size:1.02rem;font-weight:800;letter-spacing:-.2px;margin-bottom:10px;color:var(--verde-escuro)}
-h3{font-size:.95rem;font-weight:800;letter-spacing:-.1px;margin-bottom:8px;color:var(--verde-escuro)}
+h2{font-family:'Baloo 2',cursive,sans-serif;font-size:1.06rem;font-weight:700;margin-bottom:10px;color:var(--marca-escura)}
+h3{font-family:'Baloo 2',cursive,sans-serif;font-size:.98rem;font-weight:700;margin-bottom:8px;color:var(--marca-escura)}
 label{display:block;font-size:.78rem;font-weight:600;color:var(--texto-suave);margin-bottom:5px}
 input[type=text],input[type=search],input[type=number],input[type=date],
 input[type=email],input[type=password],input[type=tel],select,textarea{
@@ -99,21 +106,21 @@ input[type=email],input[type=password],input[type=tel],select,textarea{
   transition:border-color .15s, box-shadow .15s, background .15s;
 }
 input:focus,textarea:focus,select:focus{
-  outline:none;border-color:var(--verde-medio);background:#fff;
-  box-shadow:0 0 0 3px rgba(24,165,127,.14);
+  outline:none;border-color:var(--marca-viva);background:#fff;
+  box-shadow:0 0 0 3px rgba(108,76,241,.15);
 }
 textarea{min-height:140px}
 .botao{
   display:block;width:100%;padding:15px;margin-top:12px;
   font-family:inherit;font-size:1rem;font-weight:800;letter-spacing:.1px;
   border:none;border-radius:14px;cursor:pointer;text-align:center;text-decoration:none;
-  background:linear-gradient(135deg,var(--verde) 0%,var(--verde-medio) 100%);color:#fff;
-  box-shadow:0 5px 16px rgba(14,122,95,.30);
+  background:linear-gradient(135deg,var(--marca) 0%,var(--marca-viva) 100%);color:#fff;
+  box-shadow:0 5px 16px rgba(108,76,241,.32);
   transition:transform .1s, box-shadow .15s, opacity .15s;
 }
-.botao:active{transform:scale(.985);box-shadow:0 2px 8px rgba(14,122,95,.22)}
-.botao.secundario{background:#fff;color:var(--verde);border:1.5px solid #C7DAD2;box-shadow:none}
-.botao.perigo{background:linear-gradient(135deg,#A93226,var(--vermelho));box-shadow:0 5px 16px rgba(192,57,43,.26)}
+.botao:active{transform:scale(.985);box-shadow:0 2px 8px rgba(108,76,241,.22)}
+.botao.secundario{background:#fff;color:var(--marca);border:1.5px solid #DAD3F7;box-shadow:none}
+.botao.perigo{background:linear-gradient(135deg,#C93A56,var(--vermelho));box-shadow:0 5px 16px rgba(229,72,77,.26)}
 .botao.mini{display:inline-block;width:auto;padding:9px 16px;font-size:.85rem;margin:0;border-radius:11px}
 .linha-flex{display:flex;gap:10px}
 .linha-flex>*{flex:1}
@@ -122,7 +129,7 @@ textarea{min-height:140px}
   background:#FFF7E8;border:1px solid #F2DDB0;color:#6B5218;
 }
 .aviso.erro{background:var(--vermelho-claro);border-color:#EEC2BA;color:#7C271C}
-.aviso.ok{background:var(--verde-claro);border-color:#BFDCD1;color:var(--verde-escuro)}
+.aviso.ok{background:var(--menta-suave);border-color:#BEE8DA;color:#0B5C4A}
 .suave{color:var(--texto-suave);font-size:.85rem}
 .centro{text-align:center}
 .escondido{display:none !important}
@@ -140,16 +147,16 @@ textarea{min-height:140px}
 .stat .rotulo{font-size:.6rem;font-weight:800;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.8px}
 .stat .valor{font-size:1.05rem;font-weight:800;margin-top:3px;letter-spacing:-.3px}
 .stat .detalhe{font-size:.66rem;color:var(--texto-suave);margin-top:3px;line-height:1.35}
-.stat.menor{background:linear-gradient(150deg,var(--verde-escuro) 0%,var(--verde) 100%);border:none}
-.stat.menor .rotulo{color:#B9D9CC}
+.stat.menor{background:linear-gradient(150deg,var(--menta-escura) 0%,var(--menta) 100%);border:none}
+.stat.menor .rotulo{color:rgba(255,255,255,.78)}
 .stat.menor .valor{color:#fff}
-.stat.menor .detalhe{color:#B9D9CC}
+.stat.menor .detalhe{color:rgba(255,255,255,.78)}
 .veredito{
   border-radius:16px;padding:16px;text-align:center;
   font-size:1.02rem;font-weight:800;margin:12px 0;color:#fff;box-shadow:var(--sombra);
 }
-.veredito.bom{background:linear-gradient(150deg,#0F5F4B,#18A57F)}
-.veredito.ruim{background:linear-gradient(150deg,#8E2B20,#C0392B)}
+.veredito.bom{background:linear-gradient(150deg,var(--menta-escura),var(--menta))}
+.veredito.ruim{background:linear-gradient(150deg,#B23B3F,var(--vermelho))}
 .sugestoes button{
   display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--cinza-borda);
   border-radius:14px;padding:14px;margin-bottom:8px;font-family:inherit;font-size:.95rem;
@@ -162,7 +169,7 @@ textarea{min-height:140px}
 }
 .hist-item:last-child{border-bottom:none}
 .hist-item .preco{font-weight:800;white-space:nowrap;letter-spacing:-.2px}
-.hist-item .preco.menor-hist{color:var(--verde-medio)}
+.hist-item .preco.menor-hist{color:var(--menta)}
 
 /* --- leitor de QR --- */
 #leitor-qr{width:100%;border-radius:var(--radius);overflow:hidden;margin-top:8px}
@@ -170,9 +177,9 @@ textarea{min-height:140px}
 .passo::before{
   content:counter(passos);position:absolute;left:0;top:0;
   width:26px;height:26px;border-radius:50%;
-  background:linear-gradient(135deg,var(--verde),var(--verde-medio));color:#fff;
+  background:linear-gradient(135deg,var(--marca),var(--marca-viva));color:#fff;
   display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:800;
-  box-shadow:0 3px 8px rgba(14,122,95,.3);
+  box-shadow:0 3px 8px rgba(108,76,241,.3);
 }
 .lista-passos{counter-reset:passos;margin-top:10px}
 
@@ -190,15 +197,15 @@ textarea{min-height:140px}
 
 /* --- lista de compras / produtos --- */
 .compra-cab{display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer}
-.compra-cab .total{font-weight:800;color:var(--verde);white-space:nowrap;letter-spacing:-.2px}
+.compra-cab .total{font-weight:800;color:var(--menta-escura);white-space:nowrap;letter-spacing:-.2px}
 .produto-linha{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--cinza)}
 .produto-linha:last-child{border-bottom:none}
 .produto-linha .info{flex:1;min-width:0}
 .produto-linha .nome{font-weight:800;font-size:.92rem;word-break:break-word;letter-spacing:-.1px}
 .produto-linha .precos{font-size:.76rem;color:var(--texto-suave);margin-top:3px}
-.produto-linha input[type=checkbox]{width:20px;height:20px;flex:none;accent-color:var(--verde)}
+.produto-linha input[type=checkbox]{width:20px;height:20px;flex:none;accent-color:var(--marca)}
 .tag{
-  display:inline-block;background:var(--verde-claro);color:var(--verde);
+  display:inline-block;background:var(--marca-suave);color:var(--marca);
   border-radius:999px;padding:2px 9px;font-size:.66rem;font-weight:800;margin-left:4px;
   vertical-align:middle;
 }
@@ -207,7 +214,7 @@ textarea{min-height:140px}
 body.aguardando main, body.aguardando nav.abas{display:none}
 #tela-login{
   position:fixed;inset:0;z-index:100;overflow:auto;padding:12px;
-  background:linear-gradient(165deg,var(--verde-escuro) 0%,var(--verde) 55%,var(--verde-medio) 110%);
+  background:linear-gradient(165deg,var(--marca-escura) 0%,var(--marca) 55%,var(--marca-viva) 110%);
 }
 #tela-login .cartao{
   max-width:420px;margin:36px auto;border:none;border-radius:24px;padding:26px 22px;
@@ -216,25 +223,70 @@ body.aguardando main, body.aguardando nav.abas{display:none}
 #tela-login .abas-login{display:flex;gap:8px;margin:12px 0}
 #tela-login .abas-login .botao{margin-top:0}
 #tela-login .abas-login .botao.ativa{
-  background:linear-gradient(135deg,var(--verde),var(--verde-medio));
-  color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(14,122,95,.3);
+  background:linear-gradient(135deg,var(--marca),var(--marca-viva));
+  color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(108,76,241,.3);
 }
 #tela-login label{margin-top:10px}
+.mascote-hero svg{width:112px;height:112px;filter:drop-shadow(0 8px 20px rgba(11,123,98,.35))}
+.mascote-vazio svg{width:88px;height:88px}
 </style>
 </head>
 <body class="aguardando">
 
-<header class="topo"><span class="logo">🛒</span><h1>QuantoPaguei</h1></header>
+<header class="topo"><span class="logo"><svg viewBox="0 0 120 120" role="img" aria-label="Poupi, o mascote do QuantoPaguei">
+  <circle cx="60" cy="16" r="11" fill="#F2B441" stroke="#D89A26" stroke-width="2"/>
+  <text x="60" y="21" text-anchor="middle" font-size="13" font-weight="800" fill="#8A5A00" font-family="Arial,sans-serif">$</text>
+  <path d="M30 47 Q26 25 45 33 Z" fill="#12B886"/>
+  <path d="M90 47 Q94 25 75 33 Z" fill="#12B886"/>
+  <ellipse cx="60" cy="72" rx="42" ry="36" fill="#2DD3A0"/>
+  <rect x="49" y="32" width="22" height="5" rx="2.5" fill="#0B7B62"/>
+  <circle cx="45" cy="64" r="7.5" fill="#fff"/>
+  <circle cx="75" cy="64" r="7.5" fill="#fff"/>
+  <circle cx="46.5" cy="65.5" r="3.6" fill="#241B5E"/>
+  <circle cx="73.5" cy="65.5" r="3.6" fill="#241B5E"/>
+  <circle cx="47.8" cy="64" r="1.3" fill="#fff"/>
+  <circle cx="74.8" cy="64" r="1.3" fill="#fff"/>
+  <ellipse cx="60" cy="80" rx="13" ry="9" fill="#7FE7C6"/>
+  <ellipse cx="55" cy="80" rx="2.2" ry="2.8" fill="#0B7B62"/>
+  <ellipse cx="65" cy="80" rx="2.2" ry="2.8" fill="#0B7B62"/>
+  <path d="M44 93 Q60 102 76 93" stroke="#0B7B62" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  <circle cx="31" cy="76" r="5" fill="#FF9DB0" opacity=".75"/>
+  <circle cx="89" cy="76" r="5" fill="#FF9DB0" opacity=".75"/>
+  <ellipse cx="42" cy="106" rx="8" ry="5" fill="#1FB489"/>
+  <ellipse cx="78" cy="106" rx="8" ry="5" fill="#1FB489"/>
+</svg></span><h1>QuantoPaguei</h1></header>
 
 <!-- ============================================================
      TELA DE LOGIN / CADASTRO (cobre o app até a pessoa entrar)
      ============================================================ -->
 <div id="tela-login" class="escondido">
   <div class="cartao" style="max-width:420px;margin:24px auto">
-    <div class="centro" style="font-size:3rem">🛒</div>
-    <h2 class="centro" style="font-size:1.3rem">QuantoPaguei</h2>
-    <p class="suave centro">Crie sua conta gratuita para usar o app.<br>
-      Seus preços ficam salvos na nuvem e no seu aparelho.</p>
+    <div class="centro"><span class="mascote-hero"><svg viewBox="0 0 120 120" role="img" aria-label="Poupi, o mascote do QuantoPaguei">
+  <circle cx="60" cy="16" r="11" fill="#F2B441" stroke="#D89A26" stroke-width="2"/>
+  <text x="60" y="21" text-anchor="middle" font-size="13" font-weight="800" fill="#8A5A00" font-family="Arial,sans-serif">$</text>
+  <path d="M30 47 Q26 25 45 33 Z" fill="#12B886"/>
+  <path d="M90 47 Q94 25 75 33 Z" fill="#12B886"/>
+  <ellipse cx="60" cy="72" rx="42" ry="36" fill="#2DD3A0"/>
+  <rect x="49" y="32" width="22" height="5" rx="2.5" fill="#0B7B62"/>
+  <circle cx="45" cy="64" r="7.5" fill="#fff"/>
+  <circle cx="75" cy="64" r="7.5" fill="#fff"/>
+  <circle cx="46.5" cy="65.5" r="3.6" fill="#241B5E"/>
+  <circle cx="73.5" cy="65.5" r="3.6" fill="#241B5E"/>
+  <circle cx="47.8" cy="64" r="1.3" fill="#fff"/>
+  <circle cx="74.8" cy="64" r="1.3" fill="#fff"/>
+  <ellipse cx="60" cy="80" rx="13" ry="9" fill="#7FE7C6"/>
+  <ellipse cx="55" cy="80" rx="2.2" ry="2.8" fill="#0B7B62"/>
+  <ellipse cx="65" cy="80" rx="2.2" ry="2.8" fill="#0B7B62"/>
+  <path d="M44 93 Q60 102 76 93" stroke="#0B7B62" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  <circle cx="31" cy="76" r="5" fill="#FF9DB0" opacity=".75"/>
+  <circle cx="89" cy="76" r="5" fill="#FF9DB0" opacity=".75"/>
+  <ellipse cx="42" cy="106" rx="8" ry="5" fill="#1FB489"/>
+  <ellipse cx="78" cy="106" rx="8" ry="5" fill="#1FB489"/>
+</svg></span></div>
+    <h2 class="centro" style="font-size:1.5rem;margin-top:4px">QuantoPaguei</h2>
+    <p class="suave centro">Oi! Eu sou o <b>Poupi</b>. Eu guardo tudo o que você paga
+      e te aviso quando um preço está bom de verdade. 💜<br>
+      Crie sua conta gratuita para começar.</p>
     <button class="botao secundario" id="btn-google" style="display:flex;align-items:center;justify-content:center;gap:8px">
       <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.2 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.2 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.6 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C41.4 35.4 44 30.2 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>
       Continuar com o Google
@@ -285,7 +337,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
      ============================================================ -->
 <section id="tela-inicio" class="tela ativa">
   <div class="cartao busca-grande">
-    <h2>🔎 Modo comparação</h2>
+    <h2>Modo comparação</h2>
     <p class="suave" style="margin-bottom:8px">Consultar aqui <b>não registra compra</b> — serve só para saber se o preço que você achou está bom.</p>
     <label for="busca-produto">Qual produto você está olhando?</label>
     <input type="search" id="busca-produto" placeholder="ex.: arroz, coca cola…" autocomplete="off">
@@ -299,7 +351,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
         <input type="text" id="pack-gondola" inputmode="numeric" value="1">
       </div>
     </div>
-    <button class="botao secundario" id="btn-foto" style="margin-top:10px">📸 Ler etiqueta por foto</button>
+    <button class="botao secundario" id="btn-foto" style="margin-top:10px">Ler etiqueta por foto 📷</button>
     <input type="file" id="input-foto" accept="image/*" capture="environment" class="escondido">
     <div id="status-ocr"></div>
   </div>
@@ -313,7 +365,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
 
   <!-- Etapa A: capturar a chave de acesso -->
   <div class="cartao" id="bloco-captura">
-    <h2>📷 Ler nota fiscal</h2>
+    <h2>Ler nota fiscal</h2>
     <p class="suave">Aponte a câmera para o QR Code impresso na nota (NFC-e).</p>
     <button class="botao" id="btn-iniciar-camera">Ligar câmera e ler QR Code</button>
     <button class="botao secundario" id="btn-parar-camera" style="display:none">Parar câmera</button>
@@ -323,12 +375,12 @@ body.aguardando main, body.aguardando nav.abas{display:none}
       <input type="text" id="chave-manual" placeholder="URL ou chave de acesso">
       <button class="botao secundario" id="btn-usar-chave">Usar esta chave</button>
     </div>
-    <button class="botao secundario" id="btn-ir-manual">✍️ Cadastrar item avulso (sem nota)</button>
+    <button class="botao secundario" id="btn-ir-manual">Cadastrar item avulso (sem nota)</button>
   </div>
 
   <!-- Etapa B: abrir a SEFAZ e colar o texto -->
   <div class="cartao escondido" id="bloco-colar">
-    <h2>📋 Copiar dados da nota</h2>
+    <h2>Copiar dados da nota</h2>
     <div id="info-chave" class="aviso ok"></div>
     <div class="lista-passos">
       <div class="passo">Toque no botão abaixo para abrir a nota no site da SEFAZ‑MG (abre em nova aba).</div>
@@ -344,7 +396,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
 
   <!-- Etapa C: conferência (editável) antes de salvar -->
   <div class="cartao escondido" id="bloco-conferencia">
-    <h2>✅ Conferir antes de salvar</h2>
+    <h2>Conferir antes de salvar</h2>
     <div class="linha-flex">
       <div><label>Estabelecimento</label><input type="text" id="conf-estab"></div>
     </div>
@@ -355,13 +407,13 @@ body.aguardando main, body.aguardando nav.abas{display:none}
     <h3 style="margin-top:14px">Itens extraídos <span id="conf-qtd-itens" class="tag"></span></h3>
     <div id="lista-conferencia"></div>
     <button class="botao secundario" id="btn-add-item-conf">+ Adicionar item</button>
-    <button class="botao" id="btn-salvar-nota">💾 Salvar compra</button>
+    <button class="botao" id="btn-salvar-nota">Salvar compra</button>
     <button class="botao secundario" id="btn-cancelar-conf">Cancelar</button>
   </div>
 
   <!-- Fallback: cadastro manual de item avulso -->
   <div class="cartao escondido" id="bloco-manual">
-    <h2>✍️ Item avulso</h2>
+    <h2>Item avulso</h2>
     <p class="suave">Use quando não houver nota fiscal ou a leitura falhar.</p>
     <label>Produto</label>
     <input type="text" id="man-produto" placeholder="ex.: Arroz 5kg">
@@ -383,7 +435,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
       <div><label>Mercado</label><input type="text" id="man-mercado" placeholder="ex.: Supermercado BH"></div>
       <div><label>Data</label><input type="date" id="man-data"></div>
     </div>
-    <button class="botao" id="btn-salvar-manual">💾 Salvar item</button>
+    <button class="botao" id="btn-salvar-manual">Salvar item</button>
     <button class="botao secundario" id="btn-voltar-manual">← Voltar</button>
     <div id="msg-manual"></div>
   </div>
@@ -394,7 +446,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
      ============================================================ -->
 <section id="tela-compras" class="tela">
   <div class="cartao">
-    <h2>🧾 Compras registradas</h2>
+    <h2>Compras registradas</h2>
     <div id="lista-compras"></div>
   </div>
 </section>
@@ -404,13 +456,13 @@ body.aguardando main, body.aguardando nav.abas{display:none}
      ============================================================ -->
 <section id="tela-produtos" class="tela">
   <div class="cartao">
-    <h2>📦 Produtos</h2>
+    <h2>Produtos</h2>
     <input type="search" id="filtro-produtos" placeholder="Filtrar produtos…">
     <p class="suave" style="margin-top:8px">
       Marque 2+ produtos que são a mesma coisa e toque em “Unificar” para juntar
       o histórico deles sob um único nome. Toque no ✏️ para renomear.
     </p>
-    <button class="botao mini" id="btn-unificar" style="margin-top:8px">🔗 Unificar selecionados</button>
+    <button class="botao mini" id="btn-unificar" style="margin-top:8px">Unificar selecionados</button>
     <div id="lista-produtos" style="margin-top:10px"></div>
   </div>
 </section>
@@ -420,24 +472,24 @@ body.aguardando main, body.aguardando nav.abas{display:none}
      ============================================================ -->
 <section id="tela-config" class="tela">
   <div class="cartao">
-    <h2>👤 Minha conta</h2>
+    <h2>Minha conta</h2>
     <div id="info-conta" class="suave">—</div>
     <div id="status-sync" class="suave" style="margin-top:4px"></div>
     <button class="botao secundario" id="btn-sair">Sair da conta</button>
   </div>
   <div class="cartao">
-    <h2>⚙️ Backup e dados</h2>
+    <h2>Backup e dados</h2>
     <p class="suave">Os dados ficam salvos <b>apenas neste navegador</b>. Exporte um backup de tempos em tempos para não perder o histórico.</p>
     <div id="resumo-dados" class="aviso ok" style="margin-top:10px"></div>
-    <button class="botao" id="btn-exportar">⬇️ Exportar backup (JSON)</button>
+    <button class="botao" id="btn-exportar">Exportar backup (JSON)</button>
     <label class="botao secundario" style="cursor:pointer">
-      ⬆️ Importar backup (JSON)
+      Importar backup (JSON)
       <input type="file" id="input-importar" accept=".json,application/json" class="escondido">
     </label>
     <div id="msg-config"></div>
   </div>
   <div class="cartao">
-    <h2>🗑️ Zona de perigo</h2>
+    <h2>Zona de perigo</h2>
     <button class="botao perigo" id="btn-apagar-tudo">Apagar TODOS os dados</button>
   </div>
   <p class="suave centro" style="margin-top:14px">QuantoPaguei — histórico de preços via NFC‑e (MG)</p>
@@ -447,15 +499,37 @@ body.aguardando main, body.aguardando nav.abas{display:none}
 
 <!-- barra de navegação inferior -->
 <nav class="abas">
-  <button data-tela="tela-inicio" class="ativa"><span class="ico">🔍</span>Comparar</button>
-  <button data-tela="tela-ler"><span class="ico">📷</span>Ler nota</button>
-  <button data-tela="tela-compras"><span class="ico">🧾</span>Compras</button>
-  <button data-tela="tela-produtos"><span class="ico">📦</span>Produtos</button>
-  <button data-tela="tela-config"><span class="ico">⚙️</span>Backup</button>
+  <button data-tela="tela-inicio" class="ativa"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>Comparar</button>
+  <button data-tela="tela-ler"><svg class="ico" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>Ler nota</button>
+  <button data-tela="tela-compras"><svg class="ico" viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 8h8"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>Compras</button>
+  <button data-tela="tela-produtos"><svg class="ico" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>Produtos</button>
+  <button data-tela="tela-config"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>Conta</button>
 </nav>
 
 <script>
 "use strict";
+const MASCOTE_SVG = `<svg viewBox="0 0 120 120" role="img" aria-label="Poupi, o mascote do QuantoPaguei">
+  <circle cx="60" cy="16" r="11" fill="#F2B441" stroke="#D89A26" stroke-width="2"/>
+  <text x="60" y="21" text-anchor="middle" font-size="13" font-weight="800" fill="#8A5A00" font-family="Arial,sans-serif">$</text>
+  <path d="M30 47 Q26 25 45 33 Z" fill="#12B886"/>
+  <path d="M90 47 Q94 25 75 33 Z" fill="#12B886"/>
+  <ellipse cx="60" cy="72" rx="42" ry="36" fill="#2DD3A0"/>
+  <rect x="49" y="32" width="22" height="5" rx="2.5" fill="#0B7B62"/>
+  <circle cx="45" cy="64" r="7.5" fill="#fff"/>
+  <circle cx="75" cy="64" r="7.5" fill="#fff"/>
+  <circle cx="46.5" cy="65.5" r="3.6" fill="#241B5E"/>
+  <circle cx="73.5" cy="65.5" r="3.6" fill="#241B5E"/>
+  <circle cx="47.8" cy="64" r="1.3" fill="#fff"/>
+  <circle cx="74.8" cy="64" r="1.3" fill="#fff"/>
+  <ellipse cx="60" cy="80" rx="13" ry="9" fill="#7FE7C6"/>
+  <ellipse cx="55" cy="80" rx="2.2" ry="2.8" fill="#0B7B62"/>
+  <ellipse cx="65" cy="80" rx="2.2" ry="2.8" fill="#0B7B62"/>
+  <path d="M44 93 Q60 102 76 93" stroke="#0B7B62" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  <circle cx="31" cy="76" r="5" fill="#FF9DB0" opacity=".75"/>
+  <circle cx="89" cy="76" r="5" fill="#FF9DB0" opacity=".75"/>
+  <ellipse cx="42" cy="106" rx="8" ry="5" fill="#1FB489"/>
+  <ellipse cx="78" cy="106" rx="8" ry="5" fill="#1FB489"/>
+</svg>`;
 /* ============================================================
    QuantoPaguei — lógica do aplicativo
    Tudo em um único arquivo, sem backend, dados no IndexedDB.
@@ -1058,12 +1132,12 @@ function cartaoVisto(nomeBase){
   if(!nomeBase || !isFinite(precoG) || precoG <= 0) return "";
   const ultimoMercado = localStorage.getItem("qp-ultimo-mercado-visto") || "";
   return `<div class="cartao">
-    <h3>👁 Guardar preço visto (sem comprar)</h3>
+    <h3>Guardar preço visto (sem comprar)</h3>
     <p class="suave">Anota que hoje você viu “${esc(nomeBase)}” por ${fmtMoeda(precoG)}.
       Fica separado das compras e entra nas comparações futuras.</p>
     <label style="margin-top:6px">Em qual mercado você viu?</label>
     <input type="text" id="visto-mercado" value="${esc(ultimoMercado)}" placeholder="ex.: Distribuidora Campos">
-    <button class="botao secundario" id="btn-salvar-visto">👁 Guardar preço visto</button>
+    <button class="botao secundario" id="btn-salvar-visto">Guardar preço visto</button>
     <div id="msg-visto"></div>
   </div>`;
 }
@@ -1117,9 +1191,10 @@ async function renderizarBusca(){
 
   if(itens.length === 0){
     alvo.innerHTML = `<div class="cartao centro">
-      <p style="font-size:2.2rem">🧾</p>
-      <p><b>Nenhuma compra registrada ainda.</b></p>
-      <p class="suave" style="margin-top:6px">Vá em <b>Ler nota</b> para importar sua primeira nota fiscal.</p>
+      <span class="mascote-vazio">${MASCOTE_SVG}</span>
+      <p style="margin-top:6px"><b>Nenhuma compra registrada ainda.</b></p>
+      <p class="suave" style="margin-top:6px">Vá em <b>Ler nota</b> para importar sua primeira
+      nota fiscal — eu guardo os preços para você! 🐷</p>
     </div>`;
     return;
   }
@@ -1606,7 +1681,7 @@ async function renderizarCompras(){
           <div>${esc(it.descricaoOriginal)}<div class="suave">${fmtQtd(it.quantidade)} ${esc(it.unidade)} × ${fmtMoeda(it.valorUnitario)}</div></div>
           <div class="preco">${fmtMoeda(it.valorTotal)}</div>
         </div>`).join("") +
-        `<button class="botao perigo mini" style="margin-top:10px">🗑️ Excluir esta nota</button>`;
+        `<button class="botao perigo mini" style="margin-top:10px">Excluir esta nota</button>`;
       det.classList.remove("escondido");
       det.querySelector("button").addEventListener("click", async (ev) => {
         ev.stopPropagation();
@@ -1683,7 +1758,7 @@ async function renderizarResumoDados(){
   const itens = await obterItens();
   const vistos = itens.filter(it => it.ehVisto).length;
   $("#resumo-dados").innerHTML =
-    `📊 <b>${compras.length}</b> compras · <b>${itens.length - vistos}</b> itens · ` +
+    `<b>${compras.length}</b> compras · <b>${itens.length - vistos}</b> itens · ` +
     `<b>${vistos}</b> preços vistos · <b>${agruparProdutos(itens).length}</b> produtos distintos`;
   renderizarConta();
 }
