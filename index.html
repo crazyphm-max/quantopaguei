@@ -352,6 +352,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
       </div>
     </div>
     <button class="botao secundario" id="btn-foto" style="margin-top:10px">Ler etiqueta por foto 📷</button>
+    <p class="suave centro" style="margin-top:6px">Dica: aproxime até a etiqueta <b>preencher a foto</b> — quanto maior, melhor a leitura</p>
     <input type="file" id="input-foto" accept="image/*" capture="environment" class="escondido">
     <div id="status-ocr"></div>
   </div>
@@ -1077,13 +1078,25 @@ function detectarPack(descricao){
    Apoio à comparação por FOTO da etiqueta de preço (OCR):
    extrai do texto reconhecido o preço e o provável nome do produto.
    ------------------------------------------------------------ */
-// Escolhe o preço mais provável: prefere valores precedidos de "R$"
-// (preço principal da etiqueta); usa o primeiro encontrado.
-function extrairPrecoOcr(texto){
+// Lista TODOS os preços plausíveis achados na etiqueta, na ordem em que
+// aparecem, ignorando os comparativos "R$/L", "R$/KG" (letra miúda) e
+// medidas como "1,5" (exige 2 casas decimais).
+function extrairPrecosOcr(texto){
   const t = String(texto || "");
-  const comRS = [...t.matchAll(/R\$\s*(\d{1,4}[.,]\d{2})\b/gi)].map(m => parseNumeroBR(m[1]));
-  const soltos = [...t.matchAll(/(\d{1,4},\d{2})\b/g)].map(m => parseNumeroBR(m[1]));
-  const cands = (comRS.length ? comRS : soltos).filter(v => isFinite(v) && v > 0 && v < 10000);
+  const achados = [];
+  const re = /(?:R\$\s*)?(\d{1,4}[.,]\d{2})\b(\s*\/\s*(?:L|KG|ML|G|M|UN))?/gi;
+  let m;
+  while((m = re.exec(t))){
+    if(m[2]) continue; // é preço por litro/kg (comparativo da etiqueta)
+    const v = parseNumeroBR(m[1]);
+    if(isFinite(v) && v > 0.3 && v < 10000 && !achados.includes(v)) achados.push(v);
+  }
+  return achados;
+}
+// Preço mais provável = o primeiro candidato (o app também oferece os
+// demais para o usuário tocar, quando a etiqueta tem vários preços).
+function extrairPrecoOcr(texto){
+  const cands = extrairPrecosOcr(texto);
   return cands.length ? cands[0] : NaN;
 }
 // O nome do produto costuma ser a linha com mais letras (e poucos números)
@@ -1532,23 +1545,76 @@ function carregarTesseract(){
   return promTesseract;
 }
 
+// Pré-processa a foto antes do OCR: reduz o tamanho, converte para tons
+// de cinza e estica o contraste — etiquetas ficam muito mais legíveis.
+function prepararImagemOcr(arquivo){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1700;
+      const fator = Math.min(1, MAX / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.width * fator));
+      c.height = Math.max(1, Math.round(img.height * fator));
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      const d = ctx.getImageData(0, 0, c.width, c.height);
+      const px = d.data;
+      const cinza = new Float32Array(px.length / 4);
+      for(let i = 0, j = 0; i < px.length; i += 4, j++){
+        cinza[j] = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+      }
+      // contraste pelos percentis 3% e 97% (robusto a fundos claros/escuros)
+      const ordenado = Float32Array.from(cinza).sort();
+      const p3 = ordenado[Math.floor(ordenado.length * 0.03)];
+      const p97 = ordenado[Math.floor(ordenado.length * 0.97)];
+      const escala = p97 > p3 ? 255 / (p97 - p3) : 1;
+      for(let i = 0, j = 0; i < px.length; i += 4, j++){
+        const v = Math.max(0, Math.min(255, (cinza[j] - p3) * escala));
+        px[i] = px[i+1] = px[i+2] = v;
+      }
+      ctx.putImageData(d, 0, 0);
+      URL.revokeObjectURL(img.src);
+      resolve(c);
+    };
+    img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error("não consegui abrir a imagem")); };
+    img.src = URL.createObjectURL(arquivo);
+  });
+}
+
 async function processarFoto(arquivo){
   const st = $("#status-ocr");
   try{
     st.innerHTML = `<div class="aviso">⏳ Lendo a foto… (na primeira vez o leitor é baixado, pode demorar alguns segundos)</div>`;
     await carregarTesseract();
     if(!ocrWorker) ocrWorker = await Tesseract.createWorker("por");
-    const {data} = await ocrWorker.recognize(arquivo);
+    const imagem = await prepararImagemOcr(arquivo);
+    const {data} = await ocrWorker.recognize(imagem);
     const textoLido = (data && data.text) || "";
-    const preco = extrairPrecoOcr(textoLido);
+    const precos = extrairPrecosOcr(textoLido);
+    const preco = precos.length ? precos[0] : NaN;
     const nome = extrairNomeOcr(textoLido);
     if(!isFinite(preco) && !nome){
-      st.innerHTML = `<div class="aviso erro">Não consegui ler preço nem nome nessa foto. 😕 Tente de novo mais perto da etiqueta, com boa luz e sem tremer.</div>`;
+      st.innerHTML = `<div class="aviso erro">Não consegui ler essa etiqueta. 😕<br>
+        <b>Dica:</b> aproxime até a etiqueta <b>preencher a foto inteira</b>, segure firme
+        e evite sombra. Aí funciona bem melhor!</div>`;
       return;
     }
     if(nome) $("#busca-produto").value = nome;
     if(isFinite(preco)) $("#preco-gondola").value = preco.toLocaleString("pt-BR", {minimumFractionDigits:2});
-    st.innerHTML = `<div class="aviso ok">📸 Li da etiqueta: ${nome ? `“${esc(nome)}”` : "(nome não identificado)"}${isFinite(preco) ? ` — ${fmtMoeda(preco)}` : ""}.<br>Confira/corrija os campos acima se precisar.</div>`;
+    // etiquetas de atacarejo têm vários preços (promoção/atacado/varejo):
+    // oferece todos para o usuário tocar no correto
+    const chips = precos.length > 1
+      ? `<div style="margin-top:6px">Vi mais de um preço — toque no correto:<br>` +
+        precos.slice(0, 4).map(v =>
+          `<button class="botao mini secundario chip-preco" data-v="${v}" style="margin:4px 4px 0 0">${fmtMoeda(v)}</button>`
+        ).join("") + `</div>`
+      : "";
+    st.innerHTML = `<div class="aviso ok">📸 Li da etiqueta: ${nome ? `“${esc(nome)}”` : "(nome não identificado)"}${isFinite(preco) ? ` — ${fmtMoeda(preco)}` : ""}.${chips}<br>Confira/corrija os campos acima se precisar.</div>`;
+    st.querySelectorAll(".chip-preco").forEach(b => b.addEventListener("click", () => {
+      $("#preco-gondola").value = Number(b.dataset.v).toLocaleString("pt-BR", {minimumFractionDigits:2});
+      renderizarBusca();
+    }));
     renderizarBusca();
   }catch(e){
     st.innerHTML = `<div class="aviso erro">Erro ao ler a foto: ${esc((e && e.message) || e)}</div>`;
