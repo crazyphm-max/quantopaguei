@@ -397,6 +397,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
   <!-- Etapa C: conferência (editável) antes de salvar -->
   <div class="cartao escondido" id="bloco-conferencia">
     <h2>Conferir antes de salvar</h2>
+    <div id="aviso-desconto"></div>
     <div class="linha-flex">
       <div><label>Estabelecimento</label><input type="text" id="conf-estab"></div>
     </div>
@@ -954,15 +955,20 @@ function extrairCabecalho(texto){
   if(!mData) mData = texto.match(/(\d{2})\/(\d{2})\/(\d{4})/);
   if(mData) dataISO = `${mData[3]}-${mData[2]}-${mData[1]}`;
 
-  // total da nota: prioriza "Valor pago"/"Valor a pagar"; o valor pode vir na
-  // linha seguinte e com ponto decimal (formato do portal de MG: "398.33")
-  const mTotal =
+  // totais da nota (podem vir na linha seguinte e com ponto decimal):
+  // - totalBruto = "Valor total" (soma dos itens SEM desconto) — usa a ÚLTIMA
+  //   ocorrência, porque cada item também tem um "Valor total" próprio
+  // - totalPago  = "Valor pago" / "Valor a pagar" (o que saiu do bolso)
+  const mPago =
     texto.match(/valor\s+pago\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/i) ||
-    texto.match(/valor\s+a\s+pagar\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/i) ||
-    texto.match(/valor\s+total(?:\s+da\s+nota)?\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/i);
-  if(mTotal) total = parseNumeroBR(mTotal[1]);
+    texto.match(/valor\s+a\s+pagar\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/i);
+  const totalPago = mPago ? parseNumeroBR(mPago[1]) : NaN;
+  const reTotalNota = /valor\s+total(?:\s+da\s+nota)?\s*R?\$?\s*:?\s*[\r\n]*\s*R?\$?\s*([\d.,]+)/gi;
+  let totalBruto = NaN, mT;
+  while((mT = reTotalNota.exec(texto))) totalBruto = parseNumeroBR(mT[1]);
+  total = isFinite(totalPago) ? totalPago : totalBruto;
 
-  return {estabelecimento, cnpj, dataISO, total};
+  return {estabelecimento, cnpj, dataISO, total, totalBruto, totalPago};
 }
 
 // Função principal do parser: tenta todas as estratégias e usa a melhor.
@@ -978,7 +984,37 @@ function parsearTextoSefaz(texto){
   for(const t of tentativas){
     if(t.length > itens.length) itens = t;
   }
-  return {...cab, itens};
+  const r = {...cab, itens};
+
+  // DESCONTO NA NOTA (ex.: "leve 2, pague menos" da farmácia): os itens vêm
+  // com o valor CHEIO e o abatimento só aparece no rodapé (total × pago).
+  // Quando a soma dos itens bate com o total bruto, distribuímos o desconto
+  // proporcionalmente e recalculamos o valor unitário de cada item.
+  if(isFinite(cab.totalPago) && isFinite(cab.totalBruto) &&
+     cab.totalPago < cab.totalBruto - 0.005 && itens.length){
+    const soma = itens.reduce((s, it) => s + it.valorTotal, 0);
+    const desconto = Math.round((cab.totalBruto - cab.totalPago) * 100) / 100;
+    if(Math.abs(soma - cab.totalBruto) <= Math.max(0.02, soma * 0.01)){
+      const fator = cab.totalPago / soma;
+      let acumulado = 0;
+      itens.forEach((it, i) => {
+        if(i === itens.length - 1){
+          // último item recebe o ajuste de arredondamento para a soma fechar
+          it.valorTotal = Math.round((cab.totalPago - acumulado) * 100) / 100;
+        } else {
+          it.valorTotal = Math.round(it.valorTotal * fator * 100) / 100;
+          acumulado += it.valorTotal;
+        }
+        it.valorUnitario = Math.round(it.valorTotal / it.quantidade * 10000) / 10000;
+      });
+      r.descontoAplicado = desconto;
+    } else {
+      // itens não somam o total bruto (parsing parcial?) — não mexe nos
+      // valores, só avisa na conferência para o usuário ajustar
+      r.descontoNaoAplicado = desconto;
+    }
+  }
+  return r;
 }
 
 /* ------------------------------------------------------------
@@ -1497,6 +1533,19 @@ function abrirConferencia(){
   $("#conf-estab").value = n.estabelecimento || "";
   $("#conf-cnpj").value = n.cnpj || "";
   $("#conf-data").value = n.dataISO || hojeISO();
+  // avisa sobre desconto detectado no rodapé da nota
+  const av = $("#aviso-desconto");
+  if(n.descontoAplicado){
+    av.innerHTML = `<div class="aviso ok">💰 <b>Desconto de ${fmtMoeda(n.descontoAplicado)} aplicado!</b>
+      A nota somava ${fmtMoeda(n.totalBruto)} e você pagou ${fmtMoeda(n.totalPago)} —
+      o desconto já foi distribuído nos preços dos itens abaixo.</div>`;
+  } else if(n.descontoNaoAplicado){
+    av.innerHTML = `<div class="aviso">⚠️ A nota indica um desconto de ${fmtMoeda(n.descontoNaoAplicado)}
+      (total ${fmtMoeda(n.totalBruto)}, pago ${fmtMoeda(n.totalPago)}), mas não deu para
+      distribuir automaticamente. Confira e ajuste os valores abaixo.</div>`;
+  } else {
+    av.innerHTML = "";
+  }
   renderizarItensConferencia();
   mostrarBlocoLeitura("bloco-conferencia");
 }
