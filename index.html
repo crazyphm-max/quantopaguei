@@ -351,9 +351,13 @@ body.aguardando main, body.aguardando nav.abas{display:none}
         <input type="text" id="pack-gondola" inputmode="numeric" value="1">
       </div>
     </div>
-    <button class="botao secundario" id="btn-foto" style="margin-top:10px">Ler etiqueta por foto 📷</button>
+    <div class="linha-flex" style="margin-top:10px">
+      <button class="botao secundario" id="btn-foto">Tirar foto 📷</button>
+      <button class="botao secundario" id="btn-galeria">Da galeria 🖼️</button>
+    </div>
     <p class="suave centro" style="margin-top:6px">Dica: aproxime até a etiqueta <b>preencher a foto</b> — quanto maior, melhor a leitura</p>
     <input type="file" id="input-foto" accept="image/*" capture="environment" class="escondido">
+    <input type="file" id="input-galeria" accept="image/*" class="escondido">
     <div id="status-ocr"></div>
   </div>
   <div id="area-carrinho"></div>
@@ -1621,11 +1625,14 @@ async function processarFoto(arquivo){
   }
 }
 $("#btn-foto").addEventListener("click", () => $("#input-foto").click());
-$("#input-foto").addEventListener("change", (ev) => {
-  const f = ev.target.files[0];
-  if(f) processarFoto(f);
-  ev.target.value = ""; // permite fotografar de novo em seguida
-});
+$("#btn-galeria").addEventListener("click", () => $("#input-galeria").click());
+for(const id of ["#input-foto", "#input-galeria"]){
+  $(id).addEventListener("change", (ev) => {
+    const f = ev.target.files[0];
+    if(f) processarFoto(f);
+    ev.target.value = ""; // permite escolher de novo em seguida
+  });
+}
 
 /* ------------------------------------------------------------
    TELA LER NOTA — câmera, chave, colar texto, conferência
