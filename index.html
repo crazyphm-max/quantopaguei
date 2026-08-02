@@ -433,7 +433,8 @@ body.aguardando main, body.aguardando nav.abas{display:none}
     <h2>Item avulso</h2>
     <p class="suave">Use quando não houver nota fiscal ou a leitura falhar.</p>
     <label>Produto</label>
-    <input type="text" id="man-produto" placeholder="ex.: Arroz 5kg">
+    <input type="text" id="man-produto" placeholder="ex.: Arroz 5kg" autocomplete="off">
+    <div id="sugestoes-produto" class="sugestoes" style="margin-top:6px"></div>
     <div class="linha-flex" style="margin-top:6px">
       <div><label>Preço unitário (R$)</label><input type="text" id="man-preco" inputmode="decimal" placeholder="15,90"></div>
       <div><label>Quantidade</label><input type="text" id="man-qtd" inputmode="decimal" value="1"></div>
@@ -1116,16 +1117,24 @@ function extrairPrecoOcr(texto){
   const cands = extrairPrecosOcr(texto);
   return cands.length ? cands[0] : NaN;
 }
-// O nome do produto costuma ser a linha com mais letras (e poucos números)
-// depois de remover os preços.
+// Palavras de "jargão de etiqueta" que nunca fazem parte do nome do produto.
+const OCR_JARGAO = /\b(ATACADO|VAREJO|APARTIR|A\s+PARTIR|PRE[ÇC]O\s+POR\s+\w+|PRE[ÇC]O|LOJA|DATA|HORA|C[ÓO]D(IGO)?|PRODUTO|OFERTA|PROMO[ÇC][ÃA]O|ECONOMIA|CLUBE|UND?|CX\d*|CJ\d*|RS|DE)\b/gi;
+
+// O nome do produto é a linha com mais letras "de verdade" depois de
+// remover preços, números decimais e o jargão da etiqueta.
 function extrairNomeOcr(texto){
-  let melhor = "";
+  let melhor = "", melhorPontos = 0;
   for(const linha of String(texto || "").split(/\r?\n/)){
-    const semPreco = linha.replace(/R\$\s*[\d.,]+/gi, " ").replace(/\d+[.,]\d{2}/g, " ")
-                          .replace(/\s+/g, " ").trim();
-    const letras = (semPreco.match(/[A-Za-zÀ-ú]/g) || []).length;
-    const digitos = (semPreco.match(/\d/g) || []).length;
-    if(letras >= 4 && letras > digitos * 2 && semPreco.length > melhor.length) melhor = semPreco;
+    const limpa = linha
+      .replace(/R\$\s*[\d.,]+/gi, " ")
+      .replace(/\d+[.,]\d+/g, " ")
+      .replace(OCR_JARGAO, " ")
+      .replace(/[\/|:;=_*#@%~^"'’`´]+/g, " ")
+      .replace(/\s+/g, " ").trim();
+    const letras = (limpa.match(/[A-Za-zÀ-ú]/g) || []).length;
+    const digitos = (limpa.match(/\d/g) || []).length;
+    const pontos = letras - digitos * 2;
+    if(letras >= 5 && pontos > melhorPontos){ melhor = limpa; melhorPontos = pontos; }
   }
   return melhor;
 }
@@ -2040,9 +2049,59 @@ $("#btn-ir-manual").addEventListener("click", () => {
   $("#man-data").value = hojeISO();
   mostrarBlocoLeitura("bloco-manual");
 });
-// ao digitar o nome do produto, tenta detectar o pack automaticamente (ex.: "coca 6x600ml")
+/* ------------------------------------------------------------
+   Autocompletar de produto no cadastro manual: sugere primeiro os
+   produtos do SEU histórico e depois o catálogo aberto Open Food
+   Facts (br.openfoodfacts.org) quando houver internet.
+   ------------------------------------------------------------ */
+let timerSugestaoProduto = null;
+
+async function buscarSugestoesProduto(termo){
+  const alvo = $("#sugestoes-produto");
+  // 1) seu histórico (instantâneo, funciona offline)
+  const t = normalizarNome(termo);
+  const grupos = agruparProdutos(await obterItens());
+  const locais = grupos
+    .filter(g => t.split(" ").every(p => g.nome.includes(p)))
+    .slice(0, 3)
+    .map(g => ({rotulo: `${g.nome} <span class="tag">seu histórico</span>`, valor: g.nome}));
+  // 2) catálogo aberto de produtos (Open Food Facts Brasil)
+  let catalogo = [];
+  try{
+    const resp = await fetch("https://br.openfoodfacts.org/cgi/search.pl?search_terms=" +
+      encodeURIComponent(termo) +
+      "&search_simple=1&action=process&json=1&page_size=5&fields=product_name,brands,quantity");
+    if(resp.ok){
+      const dados = await resp.json();
+      catalogo = (dados.products || [])
+        .filter(p => p && p.product_name)
+        .map(p => {
+          const nome = [p.product_name,
+                        p.brands ? p.brands.split(",")[0] : "",
+                        p.quantity || ""].filter(Boolean).join(" ");
+          return {rotulo: `${esc(nome)} <span class="tag">catálogo</span>`, valor: nome};
+        });
+    }
+  }catch(_){ /* sem internet: fica só o histórico */ }
+  // o usuário pode ter continuado digitando: só mostra se o termo ainda vale
+  if($("#man-produto").value.trim() !== termo) return;
+  const todas = [...locais, ...catalogo].slice(0, 7);
+  alvo.innerHTML = todas.map(s =>
+    `<button type="button" data-v="${esc(s.valor)}">${s.rotulo}</button>`).join("");
+  alvo.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    $("#man-produto").value = b.dataset.v;
+    $("#man-pack").value = detectarPack(b.dataset.v);
+    alvo.innerHTML = "";
+  }));
+}
+
+// ao digitar: detecta pack e agenda a busca de sugestões (com pausa de 400ms)
 $("#man-produto").addEventListener("input", (ev) => {
   $("#man-pack").value = detectarPack(ev.target.value);
+  clearTimeout(timerSugestaoProduto);
+  const termo = ev.target.value.trim();
+  if(termo.length < 3){ $("#sugestoes-produto").innerHTML = ""; return; }
+  timerSugestaoProduto = setTimeout(() => buscarSugestoesProduto(termo), 400);
 });
 $("#btn-voltar-manual").addEventListener("click", () => mostrarBlocoLeitura("bloco-captura"));
 $("#btn-salvar-manual").addEventListener("click", salvarManual);
