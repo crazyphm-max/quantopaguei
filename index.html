@@ -355,6 +355,7 @@ body.aguardando main, body.aguardando nav.abas{display:none}
     <input type="file" id="input-foto" accept="image/*" capture="environment" class="escondido">
     <div id="status-ocr"></div>
   </div>
+  <div id="area-carrinho"></div>
   <div id="resultado-busca"></div>
 </section>
 
@@ -998,6 +999,9 @@ function parsearTextoSefaz(texto){
       const fator = cab.totalPago / soma;
       let acumulado = 0;
       itens.forEach((it, i) => {
+        // guarda o preço CHEIO para mostrar o desconto conquistado
+        it.valorTotalOriginal = it.valorTotal;
+        it.valorUnitarioOriginal = it.valorUnitario;
         if(i === itens.length - 1){
           // último item recebe o ajuste de arredondamento para a soma fechar
           it.valorTotal = Math.round((cab.totalPago - acumulado) * 100) / 100;
@@ -1109,7 +1113,7 @@ function mostrarTela(id){
   if(id === "tela-compras") renderizarCompras();
   if(id === "tela-produtos") renderizarProdutos();
   if(id === "tela-config") renderizarResumoDados();
-  if(id === "tela-inicio") renderizarBusca();
+  if(id === "tela-inicio"){ renderizarCarrinho(); renderizarBusca(); }
   if(id !== "tela-ler") pararCamera(); // não deixar a câmera ligada fora da tela
 }
 $$("nav.abas button").forEach(b => b.addEventListener("click", () => mostrarTela(b.dataset.tela)));
@@ -1219,6 +1223,117 @@ async function obterItens(){
 }
 function invalidarCache(){ cacheItens = null; }
 
+/* ------------------------------------------------------------
+   MODO CARRINHO — acompanha a compra em andamento no mercado.
+   Cada produto consultado pode ser adicionado ao carrinho, que
+   mostra o total em tempo real e compara com as suas médias
+   históricas. Fica salvo no aparelho até você encerrar.
+   ------------------------------------------------------------ */
+let carrinho = null;
+try{ carrinho = JSON.parse(localStorage.getItem("qp-carrinho") || "null"); }catch(_){ }
+
+function salvarCarrinho(){
+  if(carrinho) localStorage.setItem("qp-carrinho", JSON.stringify(carrinho));
+  else localStorage.removeItem("qp-carrinho");
+}
+
+function iniciarCarrinho(){
+  const mercado = (prompt("Em qual mercado você está? (opcional)") || "").trim();
+  carrinho = {ativo: true, mercado, itens: []};
+  salvarCarrinho();
+  renderizarCarrinho();
+  renderizarBusca();
+}
+
+function encerrarCarrinho(){
+  if(!confirm("Encerrar as compras e limpar o carrinho?\n\n(Dica: depois de pagar, leia o QR Code da nota para registrar a compra de verdade.)")) return;
+  carrinho = null;
+  salvarCarrinho();
+  renderizarCarrinho();
+  renderizarBusca();
+}
+
+// adiciona o produto pesquisado usando o preço/pack digitados na comparação
+function adicionarAoCarrinho(nome, mediaUnit){
+  const preco = parseNumeroBR($("#preco-gondola").value);
+  const pack = Math.max(1, Math.round(parseNumeroBR($("#pack-gondola").value)) || 1);
+  if(!carrinho || !carrinho.ativo || !isFinite(preco) || preco <= 0) return;
+  const igual = carrinho.itens.find(i => i.nome === nome && i.preco === preco && i.pack === pack);
+  if(igual) igual.qtd++;
+  else carrinho.itens.push({nome, preco, pack, qtd: 1, mediaUnit: isFinite(mediaUnit) ? mediaUnit : null});
+  salvarCarrinho();
+  renderizarCarrinho();
+}
+
+function renderizarCarrinho(){
+  const alvo = $("#area-carrinho");
+  if(!alvo) return;
+  if(!carrinho || !carrinho.ativo){
+    alvo.innerHTML = `<button class="botao secundario" id="btn-iniciar-compras" style="margin-bottom:14px">🛒 Iniciar compras (modo carrinho)</button>`;
+    $("#btn-iniciar-compras").addEventListener("click", iniciarCarrinho);
+    return;
+  }
+  const totalQtd = carrinho.itens.reduce((s, i) => s + i.qtd, 0);
+  const total = carrinho.itens.reduce((s, i) => s + i.preco * i.qtd, 0);
+  // comparação com o histórico: só nos itens que têm média conhecida
+  const comHist = carrinho.itens.filter(i => i.mediaUnit);
+  const custoHist = comHist.reduce((s, i) => s + i.mediaUnit * i.pack * i.qtd, 0);
+  const custoReal = comHist.reduce((s, i) => s + i.preco * i.qtd, 0);
+  const economia = custoHist - custoReal; // >0 = pagando abaixo das médias
+
+  const linhas = carrinho.itens.map((i, idx) => {
+    const un = i.preco / i.pack;
+    const indicador = i.mediaUnit ? (un <= i.mediaUnit + 1e-9 ? "🟢" : "🔴") : "⚪";
+    return `<div class="hist-item">
+      <div style="min-width:0">
+        <div>${indicador} ${esc(i.nome)}</div>
+        <div class="suave">${fmtMoeda(i.preco)}${i.pack > 1 ? ` · pack c/ ${i.pack} → ${fmtMoeda(un)}/un` : ""}${i.mediaUnit ? ` · sua média ${fmtMoeda(i.mediaUnit)}/un` : ""}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex:none">
+        <button class="botao mini secundario c-menos" data-i="${idx}" style="padding:4px 11px">−</button>
+        <b>${i.qtd}</b>
+        <button class="botao mini secundario c-mais" data-i="${idx}" style="padding:4px 10px">+</button>
+        <div class="preco">${fmtMoeda(i.preco * i.qtd)}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  alvo.innerHTML = `<div class="cartao" style="border:2px solid var(--marca)">
+    <h3>🛒 Comprando agora${carrinho.mercado ? ` · ${esc(carrinho.mercado)}` : ""}
+      <span class="tag">${totalQtd} ite${totalQtd === 1 ? "m" : "ns"}</span></h3>
+    ${linhas || `<p class="suave">Carrinho vazio — pesquise um produto, digite o preço da gôndola e toque em “Adicionar ao carrinho”.</p>`}
+    <div style="margin-top:10px;font-weight:800;font-size:1.1rem">Total: ${fmtMoeda(total)}</div>
+    ${comHist.length ? `<div class="suave" style="margin-top:2px">${economia >= 0
+        ? `🟢 Você está pagando <b>${fmtMoeda(economia)}</b> a menos que suas médias históricas`
+        : `🔴 Você está pagando <b>${fmtMoeda(-economia)}</b> a mais que suas médias históricas`}
+      (nos ${comHist.length} ite${comHist.length === 1 ? "m" : "ns"} com histórico)</div>` : ""}
+    <button class="botao perigo mini" id="btn-encerrar-compras" style="margin-top:12px">Encerrar compras</button>
+  </div>`;
+
+  $("#btn-encerrar-compras").addEventListener("click", encerrarCarrinho);
+  alvo.querySelectorAll(".c-mais").forEach(b => b.addEventListener("click", () => {
+    carrinho.itens[Number(b.dataset.i)].qtd++;
+    salvarCarrinho(); renderizarCarrinho();
+  }));
+  alvo.querySelectorAll(".c-menos").forEach(b => b.addEventListener("click", () => {
+    const it = carrinho.itens[Number(b.dataset.i)];
+    it.qtd--;
+    if(it.qtd <= 0) carrinho.itens.splice(Number(b.dataset.i), 1);
+    salvarCarrinho(); renderizarCarrinho();
+  }));
+}
+
+// botão "Adicionar ao carrinho" mostrado junto do resultado da comparação
+function botaoCarrinhoHtml(){
+  const preco = parseNumeroBR($("#preco-gondola").value);
+  if(!carrinho || !carrinho.ativo || !isFinite(preco) || preco <= 0) return "";
+  return `<button class="botao" id="btn-add-carrinho">🛒 Adicionar ao carrinho — ${fmtMoeda(preco)}</button>`;
+}
+function ligarBotaoCarrinho(nome, mediaUnit){
+  const b = $("#btn-add-carrinho");
+  if(b) b.addEventListener("click", () => adicionarAoCarrinho(nome, mediaUnit));
+}
+
 async function renderizarBusca(){
   const alvo = $("#resultado-busca");
   const termo = normalizarNome($("#busca-produto").value);
@@ -1249,7 +1364,9 @@ async function renderizarBusca(){
     // produto nunca registrado: ainda dá para guardar o preço como "visto"
     const nomeNovo = $("#busca-produto").value.trim();
     alvo.innerHTML = `<div class="aviso">Nenhum produto encontrado para “${esc(nomeNovo)}”.</div>` +
+      (nomeNovo ? botaoCarrinhoHtml() : "") +
       cartaoVisto(nomeNovo);
+    ligarBotaoCarrinho(nomeNovo, NaN);
     ligarSalvarVisto(nomeNovo);
     return;
   }
@@ -1336,6 +1453,7 @@ async function renderizarBusca(){
         <div>${esc(it.estabelecimento || "—")}${it.ehVisto ? ' <span class="tag">👁 visto</span>' : ""}</div>
         <div class="suave">${fmtData(it.data)} · ${fmtQtd(it.quantidade)} ${esc(it.unidade)} · ${esc(it.descricaoOriginal)}</div>
         ${packDe(it) > 1 ? `<div class="suave">📦 pack c/ ${packDe(it)} por ${fmtMoeda(it.valorUnitario)}</div>` : ""}
+        ${isFinite(it.valorUnitarioOriginal) ? `<div class="suave">💰 com desconto — o preço cheio era ${fmtMoeda(it.valorUnitarioOriginal / packDe(it))}/${esc(rotuloUnit(it))}</div>` : ""}
       </div>
       <div style="display:flex;align-items:center;gap:4px">
         <div class="preco ${Math.abs(precoUnit(it) - precoUnit(g.menor)) < 1e-9 ? "menor-hist" : ""}">
@@ -1350,6 +1468,7 @@ async function renderizarBusca(){
     <h2 style="margin:10px 0 4px">${esc(g.nome)}</h2>
     ${g.soVisto ? `<div class="aviso">👁 Você ainda não <b>comprou</b> este produto — os valores abaixo são de preços que você <b>viu</b>.</div>` : ""}
     ${veredito}
+    ${botaoCarrinhoHtml()}
     ${cartaoVisto(g.nome)}
     <div class="stats">
       <div class="stat menor">
@@ -1376,7 +1495,8 @@ async function renderizarBusca(){
       ${historico}
     </div>`;
 
-  // liga o botão de guardar preço visto e os ✕ de excluir vistos
+  // liga os botões de carrinho, guardar preço visto e os ✕ de excluir vistos
+  ligarBotaoCarrinho(g.nome, g.media);
   ligarSalvarVisto(g.nome);
   alvo.querySelectorAll(".del-visto").forEach(b => b.addEventListener("click", async () => {
     if(!confirm("Excluir este preço visto do histórico?")) return;
@@ -1566,6 +1686,7 @@ function renderizarItensConferencia(){
         <div><label>Un. no pack</label><input type="text" inputmode="numeric" class="c-pack" value="${packDe(it)}"></div>
       </div>
       ${packDe(it) > 1 ? `<div class="suave" style="margin-top:4px">📦 Pack c/ ${packDe(it)} → ≈ ${fmtMoeda(it.valorUnitario / packDe(it))} cada unidade</div>` : ""}
+      ${isFinite(it.valorUnitarioOriginal) ? `<div class="suave" style="margin-top:4px">💰 De <s>${fmtMoeda(it.valorUnitarioOriginal)}</s> por <b>${fmtMoeda(it.valorUnitario)}</b> (desconto da nota)</div>` : ""}
     </div>`).join("");
   alvo.querySelectorAll(".remover").forEach(b => b.addEventListener("click", (ev) => {
     const i = Number(ev.target.closest(".item-conf").dataset.i);
@@ -1586,9 +1707,15 @@ function lerItensDaTela(){
     const vu = parseNumeroBR(b.querySelector(".c-vu").value);
     const pack = Math.round(parseNumeroBR(b.querySelector(".c-pack").value));
     if(desc && isFinite(qtd) && qtd > 0 && isFinite(vu) && vu > 0){
+      // preserva o preço cheio (pré-desconto) detectado no parsing
+      const antigo = notaEmConferencia.itens[Number(b.closest(".item-conf").dataset.i)] || {};
       novos.push({descricao: desc, quantidade: qtd, unidade: un,
                   valorUnitario: vu, valorTotal: Math.round(qtd * vu * 100) / 100,
-                  subQuantidade: (isFinite(pack) && pack >= 1) ? pack : 1});
+                  subQuantidade: (isFinite(pack) && pack >= 1) ? pack : 1,
+                  ...(isFinite(antigo.valorUnitarioOriginal) ? {
+                    valorUnitarioOriginal: antigo.valorUnitarioOriginal,
+                    valorTotalOriginal: antigo.valorTotalOriginal
+                  } : {})});
     }
   }
   notaEmConferencia.itens = novos;
@@ -1602,13 +1729,20 @@ async function salvarNota(){
   const dataISO = $("#conf-data").value || hojeISO();
   const chave = chaveAtual || ("manual-" + Date.now());
   const total = n.itens.reduce((s, it) => s + it.valorTotal, 0);
+  // total sem o desconto (para registrar a economia conquistada)
+  const totalCheio = n.itens.reduce((s, it) => s + (it.valorTotalOriginal || it.valorTotal), 0);
+  const desconto = Math.round((totalCheio - total) * 100) / 100;
 
   const compra = {
     chave,
     estabelecimento: estab,
     cnpj: $("#conf-cnpj").value.trim(),
     data: dataISO,
-    total: Math.round(total * 100) / 100
+    total: Math.round(total * 100) / 100,
+    ...(desconto > 0.005 ? {
+      desconto,
+      totalSemDesconto: Math.round(totalCheio * 100) / 100
+    } : {})
   };
   const itens = n.itens.map(it => ({
     compraId: chave,
@@ -1619,6 +1753,10 @@ async function salvarNota(){
     valorUnitario: it.valorUnitario,
     valorTotal: it.valorTotal,
     subQuantidade: it.subQuantidade || 1,
+    ...(isFinite(it.valorUnitarioOriginal) ? {
+      valorUnitarioOriginal: it.valorUnitarioOriginal,
+      valorTotalOriginal: it.valorTotalOriginal
+    } : {}),
     estabelecimento: estab,
     data: dataISO
   }));
@@ -1711,7 +1849,8 @@ async function renderizarCompras(){
         <div>
           <b>${esc(c.estabelecimento || "—")}</b>
           <div class="suave">${fmtData(c.data)} · ${contagem.get(c.chave) || 0} itens
-            ${String(c.chave).startsWith("manual-") ? '<span class="tag">manual</span>' : ""}</div>
+            ${String(c.chave).startsWith("manual-") ? '<span class="tag">manual</span>' : ""}
+            ${c.desconto ? `<span class="tag">💰 −${fmtMoeda(c.desconto)}</span>` : ""}</div>
         </div>
         <div class="total">${fmtMoeda(c.total)}</div>
       </div>
@@ -1725,11 +1864,20 @@ async function renderizarCompras(){
       if(!det.classList.contains("escondido")){ det.classList.add("escondido"); return; }
       const chave = card.dataset.chave;
       const lista = await dbItensDaCompra(chave);
+      const compraAtual = compras.find(c => c.chave === chave) || {};
       det.innerHTML = lista.map(it => `
         <div class="hist-item">
-          <div>${esc(it.descricaoOriginal)}<div class="suave">${fmtQtd(it.quantidade)} ${esc(it.unidade)} × ${fmtMoeda(it.valorUnitario)}</div></div>
+          <div>${esc(it.descricaoOriginal)}
+            <div class="suave">${fmtQtd(it.quantidade)} ${esc(it.unidade)} ×
+              ${isFinite(it.valorUnitarioOriginal)
+                ? `<s>${fmtMoeda(it.valorUnitarioOriginal)}</s> <b>${fmtMoeda(it.valorUnitario)}</b>`
+                : fmtMoeda(it.valorUnitario)}</div>
+          </div>
           <div class="preco">${fmtMoeda(it.valorTotal)}</div>
         </div>`).join("") +
+        (compraAtual.desconto ? `<div class="aviso ok" style="margin-top:10px">💰 Você economizou
+          <b>${fmtMoeda(compraAtual.desconto)}</b> nesta compra
+          (de ${fmtMoeda(compraAtual.totalSemDesconto)} por ${fmtMoeda(compraAtual.total)}).</div>` : "") +
         `<button class="botao perigo mini" style="margin-top:10px">Excluir esta nota</button>`;
       det.classList.remove("escondido");
       det.querySelector("button").addEventListener("click", async (ev) => {
@@ -1916,16 +2064,19 @@ function colUsuario(nome){
 }
 
 // remove campos locais antes de subir um item para a nuvem
+// (o Firestore rejeita valores undefined, então também são limpos)
 function itemParaNuvem(it){
   const c = {...it};
   delete c.id;
   delete c.compraId;
+  for(const k in c) if(c[k] === undefined) delete c[k];
   return c;
 }
 
 function mostrarApp(){
   document.body.classList.remove("aguardando");
   $("#tela-login").classList.add("escondido");
+  renderizarCarrinho();
   renderizarBusca();
 }
 function mostrarLogin(){
