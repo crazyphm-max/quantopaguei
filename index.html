@@ -1091,7 +1091,10 @@ function extrairPrecosOcr(texto){
   const re = /(?:R\$\s*)?(\d{1,4}[.,]\d{2})\b(\s*\/\s*(?:L|KG|ML|G|M|UN))?/gi;
   let m;
   while((m = re.exec(t))){
-    if(m[2]) continue; // é preço por litro/kg (comparativo da etiqueta)
+    if(m[2]) continue; // é preço por litro/kg (comparativo "/L")
+    // também ignora quando vem escrito por extenso: "PREÇO POR LITRO 12.45"
+    const antes = t.slice(Math.max(0, m.index - 16), m.index);
+    if(/POR\s+(?:LITRO|LT|L|KG|QUILO|KILO|GRAMA|G|ML|M|UN)\s*:?\s*$/i.test(antes)) continue;
     const v = parseNumeroBR(m[1]);
     if(isFinite(v) && v > 0.3 && v < 10000 && !achados.includes(v)) achados.push(v);
   }
@@ -1586,6 +1589,25 @@ function prepararImagemOcr(arquivo){
   });
 }
 
+// Versão com as cores invertidas: os blocos de promoção das etiquetas
+// (números claros em fundo preto) viram texto escuro legível pelo OCR.
+function inverterCanvas(origem){
+  const c = document.createElement("canvas");
+  c.width = origem.width;
+  c.height = origem.height;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(origem, 0, 0);
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  const px = d.data;
+  for(let i = 0; i < px.length; i += 4){
+    px[i] = 255 - px[i];
+    px[i+1] = 255 - px[i+1];
+    px[i+2] = 255 - px[i+2];
+  }
+  ctx.putImageData(d, 0, 0);
+  return c;
+}
+
 async function processarFoto(arquivo){
   const st = $("#status-ocr");
   try{
@@ -1593,8 +1615,12 @@ async function processarFoto(arquivo){
     await carregarTesseract();
     if(!ocrWorker) ocrWorker = await Tesseract.createWorker("por");
     const imagem = await prepararImagemOcr(arquivo);
-    const {data} = await ocrWorker.recognize(imagem);
-    const textoLido = (data && data.text) || "";
+    // leitura dupla: normal + cores invertidas (pega os blocos de promoção
+    // em fundo preto, comuns nas etiquetas de atacarejo)
+    const passo1 = await ocrWorker.recognize(imagem);
+    const passo2 = await ocrWorker.recognize(inverterCanvas(imagem));
+    const textoLido = (((passo1.data && passo1.data.text) || "") + "\n" +
+                       ((passo2.data && passo2.data.text) || "")).trim();
     const precos = extrairPrecosOcr(textoLido);
     const preco = precos.length ? precos[0] : NaN;
     const nome = extrairNomeOcr(textoLido);
