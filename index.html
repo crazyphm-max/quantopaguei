@@ -358,6 +358,16 @@ body.aguardando main, body.aguardando nav.abas{display:none}
     <p class="suave centro" style="margin-top:6px">Dica: aproxime até a etiqueta <b>preencher a foto</b> — quanto maior, melhor a leitura</p>
     <input type="file" id="input-foto" accept="image/*" capture="environment" class="escondido">
     <input type="file" id="input-galeria" accept="image/*" class="escondido">
+    <!-- recorte manual: o usuário marca só a etiqueta antes da leitura -->
+    <div id="bloco-recorte" class="escondido" style="margin-top:10px">
+      <p class="suave"><b>Arraste o dedo</b> sobre a foto marcando <b>só a etiqueta</b> (melhora muito a leitura):</p>
+      <canvas id="canvas-recorte" style="width:100%;border-radius:12px;touch-action:none;display:block"></canvas>
+      <div class="linha-flex">
+        <button class="botao" id="btn-ler-recorte" disabled>Ler área marcada</button>
+        <button class="botao secundario" id="btn-ler-tudo">Ler tudo</button>
+      </div>
+      <button class="botao secundario" id="btn-cancelar-recorte">Cancelar</button>
+    </div>
     <div id="status-ocr"></div>
   </div>
   <div id="area-carrinho"></div>
@@ -1552,41 +1562,49 @@ function carregarTesseract(){
   return promTesseract;
 }
 
-// Pré-processa a foto antes do OCR: reduz o tamanho, converte para tons
-// de cinza e estica o contraste — etiquetas ficam muito mais legíveis.
-function prepararImagemOcr(arquivo){
+// Carrega o arquivo de imagem em um objeto Image (resolução original).
+function carregarImagem(arquivo){
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => {
-      const MAX = 1700;
-      const fator = Math.min(1, MAX / Math.max(img.width, img.height));
-      const c = document.createElement("canvas");
-      c.width = Math.max(1, Math.round(img.width * fator));
-      c.height = Math.max(1, Math.round(img.height * fator));
-      const ctx = c.getContext("2d");
-      ctx.drawImage(img, 0, 0, c.width, c.height);
-      const d = ctx.getImageData(0, 0, c.width, c.height);
-      const px = d.data;
-      const cinza = new Float32Array(px.length / 4);
-      for(let i = 0, j = 0; i < px.length; i += 4, j++){
-        cinza[j] = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
-      }
-      // contraste pelos percentis 3% e 97% (robusto a fundos claros/escuros)
-      const ordenado = Float32Array.from(cinza).sort();
-      const p3 = ordenado[Math.floor(ordenado.length * 0.03)];
-      const p97 = ordenado[Math.floor(ordenado.length * 0.97)];
-      const escala = p97 > p3 ? 255 / (p97 - p3) : 1;
-      for(let i = 0, j = 0; i < px.length; i += 4, j++){
-        const v = Math.max(0, Math.min(255, (cinza[j] - p3) * escala));
-        px[i] = px[i+1] = px[i+2] = v;
-      }
-      ctx.putImageData(d, 0, 0);
-      URL.revokeObjectURL(img.src);
-      resolve(c);
-    };
+    img.onload = () => resolve(img);
     img.onerror = () => { URL.revokeObjectURL(img.src); reject(new Error("não consegui abrir a imagem")); };
     img.src = URL.createObjectURL(arquivo);
   });
+}
+
+// Monta o canvas pré-processado para o OCR a partir da imagem (inteira ou
+// só do retângulo recortado): redimensiona para a faixa ideal de leitura,
+// converte para tons de cinza e estica o contraste pelos percentis 3%/97%.
+function montarCanvasPreproc(img, rec){
+  const sx = rec ? rec.x : 0, sy = rec ? rec.y : 0;
+  const sw = rec ? rec.w : img.naturalWidth;
+  const sh = rec ? rec.h : img.naturalHeight;
+  const maior = Math.max(sw, sh);
+  // reduz fotos gigantes; AMPLIA recortes pequenos (texto pequeno lê mal)
+  let fator = Math.min(1, 1700 / maior);
+  if(maior * fator < 1000) fator = Math.min(3, 1000 / maior);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(sw * fator));
+  c.height = Math.max(1, Math.round(sh * fator));
+  const ctx = c.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  const px = d.data;
+  const cinza = new Float32Array(px.length / 4);
+  for(let i = 0, j = 0; i < px.length; i += 4, j++){
+    cinza[j] = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+  }
+  const ordenado = Float32Array.from(cinza).sort();
+  const p3 = ordenado[Math.floor(ordenado.length * 0.03)];
+  const p97 = ordenado[Math.floor(ordenado.length * 0.97)];
+  const escala = p97 > p3 ? 255 / (p97 - p3) : 1;
+  for(let i = 0, j = 0; i < px.length; i += 4, j++){
+    const v = Math.max(0, Math.min(255, (cinza[j] - p3) * escala));
+    px[i] = px[i+1] = px[i+2] = v;
+  }
+  ctx.putImageData(d, 0, 0);
+  return c;
 }
 
 // Versão com as cores invertidas: os blocos de promoção das etiquetas
@@ -1608,13 +1626,67 @@ function inverterCanvas(origem){
   return c;
 }
 
-async function processarFoto(arquivo){
+/* --- recorte manual da etiqueta antes da leitura --- */
+let recorteEstado = null; // {img, rect (coords do canvas), escala}
+
+function abrirRecorte(img){
+  recorteEstado = {img, rect: null, desenhando: false};
+  const cv = $("#canvas-recorte");
+  const esc = Math.min(1, 1200 / Math.max(img.naturalWidth, img.naturalHeight));
+  cv.width = Math.max(1, Math.round(img.naturalWidth * esc));
+  cv.height = Math.max(1, Math.round(img.naturalHeight * esc));
+  recorteEstado.escala = esc;
+  $("#bloco-recorte").classList.remove("escondido");
+  $("#btn-ler-recorte").disabled = true;
+  $("#status-ocr").innerHTML = "";
+  desenharRecorte();
+}
+
+function fecharRecorte(){
+  $("#bloco-recorte").classList.add("escondido");
+  recorteEstado = null;
+}
+
+function desenharRecorte(){
+  if(!recorteEstado) return;
+  const cv = $("#canvas-recorte");
+  const ctx = cv.getContext("2d");
+  ctx.drawImage(recorteEstado.img, 0, 0, cv.width, cv.height);
+  const r = recorteEstado.rect;
+  if(r){
+    // escurece tudo fora da área marcada
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(0, 0, cv.width, r.y);
+    ctx.fillRect(0, r.y + r.h, cv.width, cv.height - r.y - r.h);
+    ctx.fillRect(0, r.y, r.x, r.h);
+    ctx.fillRect(r.x + r.w, r.y, cv.width - r.x - r.w, r.h);
+    ctx.strokeStyle = "#6C4CF1";
+    ctx.lineWidth = Math.max(2, cv.width / 300);
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  }
+}
+
+// converte a posição do dedo/mouse para as coordenadas internas do canvas
+function posNoCanvas(ev){
+  const cv = $("#canvas-recorte");
+  const box = cv.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(cv.width, (ev.clientX - box.left) * cv.width / box.width)),
+    y: Math.max(0, Math.min(cv.height, (ev.clientY - box.top) * cv.height / box.height))
+  };
+}
+
+// executa a leitura (da foto inteira ou só do recorte marcado)
+async function executarLeitura(recNatural){
   const st = $("#status-ocr");
+  const img = recorteEstado && recorteEstado.img;
+  if(!img) return;
+  fecharRecorte();
   try{
-    st.innerHTML = `<div class="aviso">⏳ Lendo a foto… (na primeira vez o leitor é baixado, pode demorar alguns segundos)</div>`;
+    st.innerHTML = `<div class="aviso">⏳ Lendo… (na primeira vez o leitor é baixado, pode demorar alguns segundos)</div>`;
     await carregarTesseract();
     if(!ocrWorker) ocrWorker = await Tesseract.createWorker("por");
-    const imagem = await prepararImagemOcr(arquivo);
+    const imagem = montarCanvasPreproc(img, recNatural);
     // leitura dupla: normal + cores invertidas (pega os blocos de promoção
     // em fundo preto, comuns nas etiquetas de atacarejo)
     const passo1 = await ocrWorker.recognize(imagem);
@@ -1650,15 +1722,73 @@ async function processarFoto(arquivo){
     st.innerHTML = `<div class="aviso erro">Erro ao ler a foto: ${esc((e && e.message) || e)}</div>`;
   }
 }
+// entrada da foto: abre a tela de recorte para o usuário marcar a etiqueta
+async function iniciarLeituraFoto(arquivo){
+  const st = $("#status-ocr");
+  try{
+    const img = await carregarImagem(arquivo);
+    abrirRecorte(img);
+  }catch(e){
+    st.innerHTML = `<div class="aviso erro">Erro ao abrir a foto: ${esc((e && e.message) || e)}</div>`;
+  }
+}
+
 $("#btn-foto").addEventListener("click", () => $("#input-foto").click());
 $("#btn-galeria").addEventListener("click", () => $("#input-galeria").click());
 for(const id of ["#input-foto", "#input-galeria"]){
   $(id).addEventListener("change", (ev) => {
     const f = ev.target.files[0];
-    if(f) processarFoto(f);
+    if(f) iniciarLeituraFoto(f);
     ev.target.value = ""; // permite escolher de novo em seguida
   });
 }
+
+// desenho do retângulo de recorte (dedo ou mouse)
+const cvRecorte = $("#canvas-recorte");
+cvRecorte.addEventListener("pointerdown", (ev) => {
+  if(!recorteEstado) return;
+  ev.preventDefault();
+  const p = posNoCanvas(ev);
+  recorteEstado.rect = {x: p.x, y: p.y, w: 0, h: 0};
+  recorteEstado.desenhando = true;
+  recorteEstado.inicio = p;
+  cvRecorte.setPointerCapture(ev.pointerId);
+  desenharRecorte();
+});
+cvRecorte.addEventListener("pointermove", (ev) => {
+  if(!recorteEstado || !recorteEstado.desenhando) return;
+  ev.preventDefault();
+  const p = posNoCanvas(ev);
+  const i = recorteEstado.inicio;
+  recorteEstado.rect = {
+    x: Math.min(i.x, p.x), y: Math.min(i.y, p.y),
+    w: Math.abs(p.x - i.x), h: Math.abs(p.y - i.y)
+  };
+  desenharRecorte();
+});
+cvRecorte.addEventListener("pointerup", () => {
+  if(!recorteEstado) return;
+  recorteEstado.desenhando = false;
+  const r = recorteEstado.rect;
+  // área muito pequena = toque acidental: descarta
+  if(!r || r.w < 20 || r.h < 20){
+    recorteEstado.rect = null;
+    desenharRecorte();
+    $("#btn-ler-recorte").disabled = true;
+  } else {
+    $("#btn-ler-recorte").disabled = false;
+  }
+});
+$("#btn-ler-recorte").addEventListener("click", () => {
+  if(!recorteEstado || !recorteEstado.rect) return;
+  const r = recorteEstado.rect, e = recorteEstado.escala;
+  executarLeitura({
+    x: Math.round(r.x / e), y: Math.round(r.y / e),
+    w: Math.round(r.w / e), h: Math.round(r.h / e)
+  });
+});
+$("#btn-ler-tudo").addEventListener("click", () => executarLeitura(null));
+$("#btn-cancelar-recorte").addEventListener("click", fecharRecorte);
 
 /* ------------------------------------------------------------
    TELA LER NOTA — câmera, chave, colar texto, conferência
